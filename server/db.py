@@ -244,6 +244,24 @@ def record_click(app_id):
     c.commit()
 
 
+def seed_clicks(app_id, count):
+    """导入 YAML 时恢复近 7 天热度，避免逐条点击。"""
+    if count <= 0:
+        return
+    ts = now_iso()
+    c = conn()
+    c.executemany(
+        "INSERT INTO click_event(app_id, ts) VALUES(?, ?)",
+        [(app_id, ts)] * int(count),
+    )
+    c.execute(
+        "INSERT INTO clicks(app_id, count, last_click) VALUES(?, ?, ?) "
+        "ON CONFLICT(app_id) DO UPDATE SET count = count + excluded.count, last_click = excluded.last_click",
+        (app_id, int(count), ts),
+    )
+    c.commit()
+
+
 def click_counts(days=7):
     cutoff = _retention_cutoff(days * 86400)
     rows = conn().execute(

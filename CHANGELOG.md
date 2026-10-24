@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.1.3 — 2026-10-24
+
+### 新增
+
+- `--import-yaml`：清空数据后可用一份 YAML 恢复布局、应用、主题、壁纸与近 7 天热度
+- Docker 环境变量 `REXHUB_IMPORT_YAML` / `REXHUB_IMPORT_FORCE` 自动导入
+- 导入时写入快照，已有状态默认跳过
+
 ## v0.1.2 — 2026-10-24
 
 ### 新增

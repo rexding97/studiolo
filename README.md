@@ -101,6 +101,42 @@ brew services start studiolo
 
 在「设置 → 数据」里粘贴或导入即可。
 
+## 备份与恢复
+
+**导出**：设置 → 数据 → 导出 .yaml
+
+YAML 包含布局、应用、主题、壁纸和近 7 天热度；不包含密码与主机运行时指标。
+
+**命令行恢复**（新机器或清空数据后）：
+
+```bash
+studiolo --set-password
+studiolo --import-yaml ~/studiolo-backup.yaml
+brew services start rexding97/studiolo/studiolo
+```
+
+已有状态时默认跳过，需要覆盖加 `--force-import`。
+
+**Docker 恢复**：
+
+```yaml
+volumes:
+  - ./studiolo-backup.yaml:/backup.yaml:ro
+environment:
+  REXHUB_IMPORT_YAML: /backup.yaml
+  # REXHUB_IMPORT_FORCE: "1"
+```
+
+**源码运行**：
+
+```bash
+python3 server/rexhub.py --set-password
+python3 server/rexhub.py --import-yaml ~/studiolo-backup.yaml
+python3 server/rexhub.py --port 3002
+```
+
+导入会写入一份快照，可通过 `/api/v1/state/snapshots` 查看历史版本。
+
 ## 多主机指标
 
 本机（组件 id 以 `host-mac` 开头）直接用 psutil 采集。

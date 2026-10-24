@@ -192,6 +192,8 @@ def build_parser():
     p.add_argument("--data", default=DEFAULT_DB)
     p.add_argument("--user", default=api.ADMIN_USER)
     p.add_argument("--set-password", action="store_true", help="从 REXHUB_INIT_PASSWORD 或 stdin 读取并写入密码哈希")
+    p.add_argument("--import-yaml", metavar="PATH", help="导入 YAML 桌面状态后退出")
+    p.add_argument("--force-import", action="store_true", help="导入时覆盖已有桌面状态")
     return p
 
 
@@ -208,6 +210,28 @@ def main():
             return 1
         db.set_password(args.user, password)
         print(f"已为 {args.user} 设置密码（仅保存 PBKDF2 哈希）")
+        return 0
+
+    if args.import_yaml:
+        import yaml_import
+
+        try:
+            state = yaml_import.load(args.import_yaml)
+        except (OSError, ValueError, yaml_import.ImportError) as exc:
+            print(f"导入失败：{exc}", file=sys.stderr)
+            return 1
+        if db.get_state() and not args.force_import:
+            print("已有桌面状态，跳过导入；如需覆盖请加 --force-import", file=sys.stderr)
+            return 1
+        result, _ = db.put_state(state, None)
+        for app in state.get("apps", []):
+            count = int(app.get("clicks") or 0)
+            if count > 0:
+                db.seed_clicks(app["id"], min(count, 5000))
+        print(
+            f"已导入 {len(state.get('apps', []))} 个应用、"
+            f"{len(state.get('layout', []))} 个布局项（rev {result['rev']}）"
+        )
         return 0
 
     if not db.has_user():

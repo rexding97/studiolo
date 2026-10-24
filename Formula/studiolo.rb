@@ -3,8 +3,8 @@ class Studiolo < Formula
 
   desc "Self-hosted personal cloud desktop"
   homepage "https://github.com/rexding97/studiolo"
-  url "https://github.com/rexding97/studiolo/archive/refs/tags/v0.1.1.tar.gz"
-  sha256 "7e8eb942e20683cc4783a1878ff278af038e1a226e65da5a2882a95daef1780a"
+  url "https://github.com/rexding97/studiolo/archive/refs/tags/v0.1.2.tar.gz"
+  sha256 "10a2cabf86b75a4ce95c1677b5f62e6f242599396ae48b76bf6632e5cf09be99"
   license "MIT"
 
   depends_on "python@3.12"

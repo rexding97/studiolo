@@ -77,6 +77,20 @@ docker compose up -d --build
 
 镜像基于 `python:3.12-slim`，容器内以非 root 用户运行，健康检查请求 `/api/v1/health`。
 
+### Homebrew（macOS）
+
+```bash
+brew tap rexding97/studiolo https://github.com/rexding97/studiolo
+brew install rexding97/studiolo/studiolo
+
+studiolo --set-password
+brew services start studiolo
+```
+
+- 数据目录：`$(brew --prefix)/var/studiolo`
+- 前台运行：`studiolo --port 3002`
+- formula 位于仓库 `Formula/studiolo.rb`
+
 ## 默认配置
 
 `web/default-state.yaml` 是一份可直接导入的示例：

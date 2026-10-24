@@ -1348,12 +1348,187 @@
   }
 
   /* =========================================================
-   * 6. 壁纸与实时时钟
+   * 6. 壁纸引擎与实时时钟
    * ========================================================= */
+  let wallpaperAnimation = null;
+  let wallpaperVideoEl = null;
+  let wallpaperResizeHandler = null;
+
+  function stopDynamicWallpaper() {
+    if (wallpaperAnimation) {
+      cancelAnimationFrame(wallpaperAnimation);
+      wallpaperAnimation = null;
+    }
+    if (wallpaperResizeHandler) {
+      window.removeEventListener("resize", wallpaperResizeHandler);
+      wallpaperResizeHandler = null;
+    }
+    if (wallpaperVideoEl) {
+      wallpaperVideoEl.pause();
+      wallpaperVideoEl.remove();
+      wallpaperVideoEl = null;
+    }
+    const canvas = document.getElementById("wallpaperCanvas");
+    if (canvas) canvas.remove();
+    const stage = document.getElementById("wallpaperStage");
+    if (stage) stage.classList.remove("has-dynamic");
+  }
+
+  function prefersReducedMotion() {
+    return Boolean(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  }
+
+  function startCanvasWallpaper(sceneName, dim) {
+    const stage = document.getElementById("wallpaperStage");
+    if (!stage) return;
+
+    const canvas = document.createElement("canvas");
+    canvas.id = "wallpaperCanvas";
+    canvas.className = "wallpaper-canvas";
+    stage.appendChild(canvas);
+    stage.classList.add("has-dynamic");
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    let width = 1;
+    let height = 1;
+
+    const resize = () => {
+      width = Math.max(1, stage.clientWidth);
+      height = Math.max(1, stage.clientHeight);
+      canvas.width = Math.floor(width * dpr);
+      canvas.height = Math.floor(height * dpr);
+      canvas.style.width = width + "px";
+      canvas.style.height = height + "px";
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    };
+    resize();
+    wallpaperResizeHandler = resize;
+    window.addEventListener("resize", resize);
+
+    const stars = Array.from({ length: 150 }, () => ({
+      x: Math.random(),
+      y: Math.random(),
+      r: 0.4 + Math.random() * 1.3,
+      speed: 0.004 + Math.random() * 0.012,
+      phase: Math.random() * Math.PI * 2
+    }));
+
+    const started = performance.now();
+    const draw = (now) => {
+      wallpaperAnimation = requestAnimationFrame(draw);
+      if (document.hidden) return;
+
+      const t = (now - started) / 1000;
+      const w = width;
+      const h = height;
+
+      if (sceneName === "starfield") {
+        ctx.fillStyle = "#050814";
+        ctx.fillRect(0, 0, w, h);
+
+        const glow = ctx.createRadialGradient(w * 0.7, h * 0.25, 0, w * 0.7, h * 0.25, Math.max(w, h) * 0.7);
+        glow.addColorStop(0, "rgba(129,140,248,0.18)");
+        glow.addColorStop(1, "rgba(5,8,20,0)");
+        ctx.fillStyle = glow;
+        ctx.fillRect(0, 0, w, h);
+
+        stars.forEach((star) => {
+          const y = (star.y + t * star.speed) % 1;
+          const alpha = 0.3 + 0.7 * Math.abs(Math.sin(t * 0.5 + star.phase));
+          ctx.beginPath();
+          ctx.arc(star.x * w, y * h, star.r, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(226,232,240,${alpha * 0.8})`;
+          ctx.fill();
+        });
+      } else if (sceneName === "mesh") {
+        const base = ctx.createLinearGradient(0, 0, w, h);
+        base.addColorStop(0, "#1c1917");
+        base.addColorStop(1, "#0c0a1a");
+        ctx.fillStyle = base;
+        ctx.fillRect(0, 0, w, h);
+
+        const blobs = [
+          { cx: 0.25, cy: 0.3, color: "251,191,36", phase: 0 },
+          { cx: 0.75, cy: 0.65, color: "249,115,22", phase: 2.1 },
+          { cx: 0.55, cy: 0.2, color: "124,45,18", phase: 4.2 }
+        ];
+        blobs.forEach((blob) => {
+          const x = (blob.cx + Math.sin(t * 0.08 + blob.phase) * 0.08) * w;
+          const y = (blob.cy + Math.cos(t * 0.06 + blob.phase) * 0.08) * h;
+          const radius = Math.max(w, h) * 0.45;
+          const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+          gradient.addColorStop(0, `rgba(${blob.color},0.3)`);
+          gradient.addColorStop(1, `rgba(${blob.color},0)`);
+          ctx.fillStyle = gradient;
+          ctx.fillRect(0, 0, w, h);
+        });
+      } else {
+        const sky = ctx.createLinearGradient(0, 0, 0, h);
+        sky.addColorStop(0, "#060b1a");
+        sky.addColorStop(0.55, "#0b1b33");
+        sky.addColorStop(1, "#0a2f45");
+        ctx.fillStyle = sky;
+        ctx.fillRect(0, 0, w, h);
+
+        for (let i = 0; i < 3; i += 1) {
+          const band = ctx.createLinearGradient(0, h * (0.2 + i * 0.18), w, h * (0.5 + i * 0.18));
+          band.addColorStop(0, "rgba(16,185,129,0)");
+          band.addColorStop(0.45, `rgba(56,189,248,${0.12 - i * 0.025})`);
+          band.addColorStop(0.7, `rgba(168,85,247,${0.14 - i * 0.025})`);
+          band.addColorStop(1, "rgba(16,185,129,0)");
+          ctx.fillStyle = band;
+          ctx.beginPath();
+          ctx.moveTo(0, h);
+          for (let x = 0; x <= w; x += 14) {
+            const y = h * (0.5 + i * 0.07) + Math.sin(x * 0.004 + t * (0.16 + i * 0.04)) * (26 + i * 9);
+            ctx.lineTo(x, y);
+          }
+          ctx.lineTo(w, h);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+
+      if (dim > 0) {
+        ctx.fillStyle = `rgba(2,6,20,${dim})`;
+        ctx.fillRect(0, 0, w, h);
+      }
+    };
+
+    wallpaperAnimation = requestAnimationFrame(draw);
+  }
+
+  function startVideoWallpaper(url, poster, dim) {
+    const stage = document.getElementById("wallpaperStage");
+    if (!stage) return;
+
+    const video = document.createElement("video");
+    video.id = "wallpaperVideo";
+    video.className = "wallpaper-video";
+    video.autoplay = true;
+    video.muted = true;
+    video.loop = true;
+    video.playsInline = true;
+    video.preload = "auto";
+    if (poster) video.poster = poster;
+    video.src = url;
+    if (dim > 0) video.style.filter = `brightness(${Math.max(0.4, 1 - dim)})`;
+    stage.appendChild(video);
+    stage.classList.add("has-dynamic");
+    wallpaperVideoEl = video;
+    video.play().catch(() => {});
+  }
+
   function applyWallpaper() {
     const stage = document.getElementById("wallpaperStage");
     const photoLayer = document.getElementById("wallpaperPhoto");
     if (!stage || !photoLayer) return;
+
+    stopDynamicWallpaper();
+    stage.classList.remove("has-photo");
+    photoLayer.style.backgroundImage = "none";
 
     if (state.profile.customWallpaperUrl) {
       stage.dataset.scene = "scene-aurora";
@@ -1362,8 +1537,37 @@
       return;
     }
 
+    const pack = (window.REX_THEME_PACKS || []).find((item) => item.id === state.profile.themePack);
+    if (pack && pack.wallpaper) {
+      const wallpaper = pack.wallpaper;
+      const allowDynamic = state.profile.dynamicWallpaper !== false && !prefersReducedMotion();
+
+      if (!allowDynamic) {
+        stage.dataset.scene = "scene-aurora";
+        if (wallpaper.fallback) {
+          photoLayer.style.backgroundImage = wallpaper.fallback;
+          stage.classList.add("has-photo");
+        }
+        return;
+      }
+      if (wallpaper.type === "canvas" && wallpaper.scene) {
+        startCanvasWallpaper(wallpaper.scene, Number(wallpaper.dim || 0));
+        return;
+      }
+      if (wallpaper.type === "video" && wallpaper.value) {
+        startVideoWallpaper(wallpaper.value, wallpaper.poster, Number(wallpaper.dim || 0));
+        return;
+      }
+      if (wallpaper.type === "gradient" && wallpaper.value) {
+        stage.dataset.scene = "scene-aurora";
+        photoLayer.style.backgroundImage = wallpaper.value;
+        stage.classList.add("has-photo");
+        return;
+      }
+    }
+
     const preset =
-      window.REX_WALLPAPERS.find((w) => w.id === state.profile.wallpaper) ||
+      window.REX_WALLPAPERS.find((item) => item.id === state.profile.wallpaper) ||
       window.REX_WALLPAPERS[0];
 
     if (preset.type === "photo" && preset.url) {
@@ -1371,8 +1575,6 @@
       photoLayer.style.backgroundImage = `linear-gradient(180deg, rgba(8,13,26,0.24), rgba(8,13,26,0.5)), url('${preset.url}')`;
       stage.classList.add("has-photo");
     } else {
-      stage.classList.remove("has-photo");
-      photoLayer.style.backgroundImage = "none";
       stage.dataset.scene = preset.type || "scene-aurora";
     }
   }
@@ -2238,9 +2440,11 @@
         `;
         card.addEventListener("click", () => {
           state.profile.themePreset = preset.id;
+          state.profile.themePack = "";
           state.profile.themeCustom = JSON.parse(JSON.stringify(preset.config));
           saveState();
           applyTheme();
+          applyWallpaper();
           renderPresetCards();
           renderTokenEditor();
         });
@@ -2405,6 +2609,52 @@
       renderTokenEditor();
     };
 
+    function applyThemePack(pack) {
+      state.profile.themePack = pack.id;
+      state.profile.themePreset = "custom";
+      state.profile.themeCustom = Object.assign({}, state.profile.themeCustom || {}, pack.tokens || {});
+      state.profile.customWallpaperUrl = "";
+      saveState();
+      applyTheme();
+      applyWallpaper();
+      if (window.openThemeStudio) window.openThemeStudio();
+      if (window.renderThemeStore) window.renderThemeStore();
+    }
+
+    function renderThemeStore() {
+      const host = document.getElementById("themeStoreGrid");
+      if (!host) return;
+      host.innerHTML = "";
+
+      (window.REX_THEME_PACKS || []).forEach((pack) => {
+        const active = state.profile.themePack === pack.id;
+        const preview =
+          (pack.wallpaper && (pack.wallpaper.fallback || pack.wallpaper.value)) ||
+          "linear-gradient(135deg, #1e293b, #0f172a)";
+        const card = document.createElement("div");
+        card.className = `theme-store-card ${active ? "active" : ""}`;
+        card.innerHTML = `
+          <div class="theme-store-preview" style="background:${preview}">
+            <span class="theme-store-badge">${escapeHtml(pack.badge || "")}</span>
+          </div>
+          <div class="theme-store-meta">
+            <strong>${escapeHtml(pack.name)}</strong>
+            <span>${escapeHtml(pack.author || "")}</span>
+          </div>
+          <div class="theme-store-desc">${escapeHtml(pack.desc || "")}</div>
+          <button type="button" class="glass-btn theme-store-apply">${active ? "✓ 当前使用" : "应用主题"}</button>
+        `;
+        card.querySelector(".theme-store-apply").addEventListener("click", (event) => {
+          event.stopPropagation();
+          applyThemePack(pack);
+        });
+        host.appendChild(card);
+      });
+    }
+
+    window.renderThemeStore = renderThemeStore;
+    window.applyThemePack = applyThemePack;
+
     document.getElementById("exportThemeBtn").addEventListener("click", () => {
       const content = themeToYaml(currentTokens());
       const blob = new Blob([content], { type: "text/yaml;charset=utf-8" });
@@ -2436,9 +2686,11 @@
     document.getElementById("resetThemeBtn").addEventListener("click", () => {
       const preset = window.REX_THEME_PRESETS["vision-glass"];
       state.profile.themePreset = preset.id;
+      state.profile.themePack = "";
       state.profile.themeCustom = JSON.parse(JSON.stringify(preset.config));
       saveState();
       applyTheme();
+      applyWallpaper();
       renderPresetCards();
       renderTokenEditor();
     });
@@ -3126,6 +3378,7 @@
         d.addEventListener("click", () => {
           state.profile.wallpaper = wp.id;
           state.profile.customWallpaperUrl = "";
+          state.profile.themePack = "";
           customUrlInput.value = "";
           saveState();
           applyWallpaper();
@@ -3221,6 +3474,7 @@
       const body = backdrop.querySelector(".settings-body");
       if (body) body.scrollTop = 0;
       if (name === "theme" && window.openThemeStudio) window.openThemeStudio();
+      if (name === "store" && window.renderThemeStore) window.renderThemeStore();
     }
 
     window.openSettings = function (tab) {
@@ -3228,6 +3482,8 @@
       if (titleInput) titleInput.value = state.profile.title || "Studiolo";
       const dockToggle = document.getElementById("dockEnabledToggle");
       if (dockToggle) dockToggle.checked = state.profile.dockEnabled !== false;
+      const dynamicToggle = document.getElementById("dynamicWallpaperToggle");
+      if (dynamicToggle) dynamicToggle.checked = state.profile.dynamicWallpaper !== false;
       if (window.openConfigModal) window.openConfigModal();
       selectTab(tab || "desktop");
       backdrop.hidden = false;
@@ -3262,6 +3518,15 @@
         state.profile.dockEnabled = dockToggle.checked;
         saveState();
         renderWorkspace();
+      });
+    }
+
+    const dynamicToggle = document.getElementById("dynamicWallpaperToggle");
+    if (dynamicToggle) {
+      dynamicToggle.addEventListener("change", () => {
+        state.profile.dynamicWallpaper = dynamicToggle.checked;
+        saveState();
+        applyWallpaper();
       });
     }
   }

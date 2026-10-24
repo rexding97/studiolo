@@ -127,6 +127,7 @@
       <div class="settings-tabs" role="tablist">
         <button type="button" data-settings-tab="desktop" class="active">桌面</button>
         <button type="button" data-settings-tab="theme">主题</button>
+        <button type="button" data-settings-tab="store">商店</button>
         <button type="button" data-settings-tab="wallpaper">壁纸</button>
         <button type="button" data-settings-tab="data">数据</button>
       </div>
@@ -175,6 +176,16 @@
           </div>
         </section>
 
+        <section data-settings-panel="store" hidden>
+          <div class="form-field">
+            <label>主题商店</label>
+            <div class="theme-store-grid" id="themeStoreGrid"></div>
+          </div>
+          <div class="settings-note">
+            主题包同时包含 UI 参数与壁纸。内置主题可直接应用；远程主题包后续通过索引安装。
+          </div>
+        </section>
+
         <section data-settings-panel="wallpaper" hidden>
           <div class="form-field">
             <label>精选壁纸</label>
@@ -187,6 +198,17 @@
               <input type="text" id="customWpUrlInput" placeholder="粘贴任意图片 URL (https://...)" />
               <button type="button" class="glass-btn" id="applyCustomWpBtn" style="white-space:nowrap">应用图片</button>
             </div>
+          </div>
+
+          <div class="settings-row" style="margin-top:22px">
+            <div>
+              <div class="settings-row-title">动态壁纸</div>
+              <div class="settings-row-desc">Canvas 场景与视频会持续渲染；关闭后回退为静态渐变，更省电。</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="dynamicWallpaperToggle" />
+              <span></span>
+            </label>
           </div>
         </section>
 

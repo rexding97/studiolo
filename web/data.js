@@ -343,6 +343,120 @@ window.REX_THEME_TOKENS = [
   }
 ];
 
+window.REX_THEME_PACKS = [
+  {
+    id: "aurora-night",
+    name: "极光夜航",
+    author: "Studiolo",
+    desc: "深蓝夜空与缓慢流动的极光带，适合长时间使用",
+    badge: "动态壁纸",
+    tokens: {
+      cardBgOpacity: 0.12,
+      cardBlur: 34,
+      cardRadius: 26,
+      cardBorderOpacity: 0.24,
+      cardShadowStrength: 0.5,
+      accentColor: "#7dd3fc",
+      textPrimary: "#f0f9ff",
+      iconShape: "squircle",
+      iconSurface: "frosted",
+      logoMode: "raw-clean",
+      iconScale: 1,
+      iconGloss: true,
+      gridGap: 18
+    },
+    wallpaper: {
+      type: "canvas",
+      scene: "aurora",
+      dim: 0.28,
+      fallback: "linear-gradient(135deg, #0b1026 0%, #12304a 45%, #1b5e6b 100%)"
+    }
+  },
+  {
+    id: "deep-space",
+    name: "深空星野",
+    author: "Studiolo",
+    desc: "缓慢漂移的星点与深空底色，安静、克制",
+    badge: "动态壁纸",
+    tokens: {
+      cardBgOpacity: 0.16,
+      cardBlur: 30,
+      cardRadius: 24,
+      cardBorderOpacity: 0.22,
+      cardShadowStrength: 0.55,
+      accentColor: "#a78bfa",
+      textPrimary: "#f5f3ff",
+      iconShape: "squircle",
+      iconSurface: "dark-matte",
+      logoMode: "mono-white",
+      iconScale: 1,
+      iconGloss: false,
+      gridGap: 20
+    },
+    wallpaper: {
+      type: "canvas",
+      scene: "starfield",
+      dim: 0.35,
+      fallback: "linear-gradient(180deg, #050814 0%, #0b1226 60%, #111a33 100%)"
+    }
+  },
+  {
+    id: "solar-mesh",
+    name: "暖光网格",
+    author: "Studiolo",
+    desc: "缓慢呼吸的暖色光斑，适合夜间与阅读",
+    badge: "动态壁纸",
+    tokens: {
+      cardBgOpacity: 0.18,
+      cardBlur: 32,
+      cardRadius: 28,
+      cardBorderOpacity: 0.3,
+      cardShadowStrength: 0.42,
+      accentColor: "#fbbf24",
+      textPrimary: "#fffbeb",
+      iconShape: "rounded",
+      iconSurface: "gradient",
+      logoMode: "badge-pad",
+      iconScale: 1.02,
+      iconGloss: true,
+      gridGap: 18
+    },
+    wallpaper: {
+      type: "canvas",
+      scene: "mesh",
+      dim: 0.22,
+      fallback: "linear-gradient(135deg, #f59e0b 0%, #7c2d12 55%, #1e1b4b 100%)"
+    }
+  },
+  {
+    id: "slate-glass",
+    name: "墨石玻璃",
+    author: "Studiolo",
+    desc: "静态深灰渐变，低功耗，适合常开桌面",
+    badge: "静态",
+    tokens: {
+      cardBgOpacity: 0.2,
+      cardBlur: 28,
+      cardRadius: 24,
+      cardBorderOpacity: 0.26,
+      cardShadowStrength: 0.48,
+      accentColor: "#94a3b8",
+      textPrimary: "#f8fafc",
+      iconShape: "squircle",
+      iconSurface: "dark-matte",
+      logoMode: "raw-clean",
+      iconScale: 1,
+      iconGloss: false,
+      gridGap: 18
+    },
+    wallpaper: {
+      type: "gradient",
+      value: "radial-gradient(1200px 800px at 20% 10%, #1e293b 0%, #0b1120 55%, #020617 100%)",
+      dim: 0
+    }
+  }
+];
+
 window.REX_WIDGET_CATALOG = {
   "server-node": {
     name: "服务器主机组件",

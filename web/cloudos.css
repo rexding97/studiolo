@@ -1535,3 +1535,93 @@ body.dock-on .desktop-shell { padding-bottom: 96px; }
   padding-top: 16px;
   border-top: 1px solid rgba(255, 255, 255, 0.14);
 }
+
+/* ===== 动态壁纸层 ===== */
+.wallpaper-canvas,
+.wallpaper-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+  pointer-events: none;
+}
+.wallpaper-stage.has-dynamic .ambient-orb,
+.wallpaper-stage.has-dynamic .wallpaper-mountains {
+  display: none;
+}
+
+/* ===== 主题商店 ===== */
+.theme-store-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+.theme-store-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(10, 16, 30, 0.55);
+  transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+}
+.theme-store-card:hover {
+  border-color: rgba(255, 255, 255, 0.24);
+  transform: translateY(-1px);
+}
+.theme-store-card.active {
+  border-color: rgba(56, 189, 248, 0.6);
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.28);
+}
+
+.theme-store-preview {
+  position: relative;
+  height: 96px;
+  background-size: cover;
+  background-position: center;
+}
+.theme-store-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.42);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: rgba(240, 248, 255, 0.9);
+  font-size: 10.5px;
+}
+
+.theme-store-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 10px 12px 0;
+}
+.theme-store-meta strong {
+  font-size: 13.5px;
+  color: #eaf1fb;
+}
+.theme-store-meta span {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.theme-store-desc {
+  flex: 1;
+  padding: 6px 12px 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.theme-store-apply {
+  margin: 10px 12px 12px;
+  padding: 7px 10px;
+  font-size: 12px;
+  text-align: center;
+}

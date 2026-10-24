@@ -17,6 +17,11 @@
   const STORAGE_KEY = "rex_cloudos_state_v4";
   const GRID_COLS = 12;
 
+  // GitHub Pages 等纯静态托管时启用示例数据，不请求后端
+  const DEMO_MODE =
+    location.hostname.endsWith(".github.io") ||
+    new URLSearchParams(location.search).has("demo");
+
   const SEARCH_ENGINES = {
     google: { name: "Google", url: "https://www.google.com/search?q=" },
     bing: { name: "Bing", url: "https://www.bing.com/search?q=" },
@@ -231,7 +236,7 @@
     }
 
     function schedulePush(delay) {
-      if (!authed) return;
+      if (!authed || DEMO_MODE) return;
       dirty = true;
       if (pushTimer) clearTimeout(pushTimer);
       pushTimer = setTimeout(push, typeof delay === "number" ? delay : 800);
@@ -413,7 +418,7 @@
           paintWeatherShell(shell, findWeatherConfig(city) || { city });
         });
       }
-      writeLocalState();
+      if (!DEMO_MODE) writeLocalState();
       const stamp = new Date().toLocaleTimeString("zh-CN", { hour12: false });
       const indicator = document.getElementById("syncIndicator");
       if (indicator) indicator.title = `已同步 · ${stamp}`;
@@ -430,7 +435,73 @@
       });
     }
 
+    function demoSnapshot() {
+      const wobble = (base, amp) => Math.max(1, Math.min(99, base + (Math.random() - 0.5) * amp));
+      const day = (offset) => {
+        const d = new Date();
+        d.setDate(d.getDate() + offset);
+        return d.toISOString().slice(0, 10);
+      };
+      const probes = {};
+      (state.apps || []).forEach((app) => {
+        probes[app.id] = {
+          online: true,
+          httpCode: 200,
+          latencyMs: 18 + Math.round(Math.random() * 90),
+          checkedAt: new Date().toISOString(),
+        };
+      });
+      return {
+        hosts: {
+          mac: { cpu: wobble(12, 6), mem: wobble(38, 2), disk: 61.5, uptime: 1036800, pingMs: 1 },
+          office: { cpu: wobble(23, 10), mem: wobble(58, 2), disk: 42.0, uptime: 3196800, pingMs: 4 },
+          fnas: { cpu: wobble(4, 3), mem: wobble(22, 1), disk: 55.3, uptime: 2764800, pingMs: 3 },
+        },
+        probes,
+        weather: {
+          "上海": {
+            city: "上海",
+            temp: 21.4,
+            feels: 20.8,
+            humidity: 64,
+            wind: 9.2,
+            code: 2,
+            days: [
+              { date: day(0), code: 2, max: 23, min: 15 },
+              { date: day(1), code: 3, max: 22, min: 16 },
+              { date: day(2), code: 61, max: 20, min: 14 },
+              { date: day(3), code: 1, max: 24, min: 15 },
+            ],
+            updatedAt: new Date().toISOString(),
+          },
+        },
+        clicks: {},
+        serverTime: new Date().toISOString(),
+      };
+    }
+
+    function startDemoRuntime() {
+      setSync("ok", "示例模式");
+      let timer = null;
+      const tick = () => {
+        if (document.hidden) return;
+        applyRuntime(demoSnapshot());
+      };
+      tick();
+      timer = setInterval(tick, 5000);
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) tick();
+      });
+      return timer;
+    }
+
     async function init() {
+      if (DEMO_MODE) {
+        authed = true;
+        hide();
+        startDemoRuntime();
+        return;
+      }
       setSync("saving");
       const { res, body } = await request("/api/v1/auth/me");
       if (!res.ok) {
@@ -463,7 +534,7 @@
     window.addEventListener("offline", () => setSync("offline"));
 
     window.addEventListener("pagehide", () => {
-      if (!authed || !dirty) return;
+      if (!authed || !dirty || DEMO_MODE) return;
       try {
         fetch("/api/v1/state", {
           method: "PUT",
@@ -1353,7 +1424,15 @@
   function deriveCandidateLogos(app) {
     const list = [];
     if (app.useSiteLogo !== false && app.href && /^https?:\/\//i.test(app.href)) {
-      list.push(`/api/v1/favicon?u=${encodeURIComponent(app.href)}`);
+      if (DEMO_MODE) {
+        try {
+          const u = new URL(app.href);
+          list.push(`${u.origin}/favicon.ico`);
+          list.push(`https://www.google.com/s2/favicons?domain=${encodeURIComponent(u.hostname)}&sz=64`);
+        } catch (_) {}
+      } else {
+        list.push(`/api/v1/favicon?u=${encodeURIComponent(app.href)}`);
+      }
     }
     if (app.logoUrl && app.logoUrl.trim()) list.push(app.logoUrl.trim());
     return list;
@@ -2009,6 +2088,10 @@
     const brand = document.querySelector(".brand-name");
     if (brand) brand.textContent = title;
     if (document.title !== title) document.title = title;
+    if (DEMO_MODE) {
+      const meta = document.querySelector(".brand-meta");
+      if (meta) meta.textContent = "在线示例 · 数据为演示";
+    }
   }
 
   /* =========================================================

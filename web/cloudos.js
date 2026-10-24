@@ -3438,7 +3438,9 @@
 
     const TAB_META = {
       desktop: ["桌面", "名称、Dock 与显示行为"],
-      appearance: ["外观", "主题、字体、壁纸与显示效果"],
+      "appearance-theme": ["主题", "选择一套主题包，或导入自己的"],
+      "appearance-custom": ["自定义", "逐项调整材质、图标、字体与颜色"],
+      "appearance-wallpaper": ["壁纸", "静态、动态与自定义图片"],
       data: ["数据", "YAML 备份、导入与重置"]
     };
 
@@ -3456,7 +3458,20 @@
       if (titleEl) titleEl.textContent = meta[0];
       if (subEl) subEl.textContent = meta[1];
 
-      if (name === "appearance") {
+      document.querySelectorAll(".settings-nav-parent").forEach((el) => {
+        el.classList.remove("active-parent");
+      });
+
+      if (name.startsWith("appearance")) {
+        const parent = document.querySelector(
+          '.settings-nav-group[data-nav-group="appearance"] .settings-nav-parent'
+        );
+        if (parent) {
+          parent.classList.add("active-parent");
+          parent.setAttribute("aria-expanded", "true");
+          const children = parent.parentElement.querySelector(".settings-nav-children");
+          if (children) children.hidden = false;
+        }
         if (window.openThemeStudio) window.openThemeStudio();
         if (window.renderThemeStore) window.renderThemeStore();
       }
@@ -3486,6 +3501,20 @@
 
     tabs.forEach((btn) => {
       btn.addEventListener("click", () => selectTab(btn.dataset.settingsTab));
+    });
+
+    document.querySelectorAll(".settings-nav-parent").forEach((parent) => {
+      parent.addEventListener("click", () => {
+        if (!parent.classList.contains("active-parent")) {
+          selectTab("appearance-theme");
+          return;
+        }
+        const expanded = parent.getAttribute("aria-expanded") !== "false";
+        parent.setAttribute("aria-expanded", String(!expanded));
+        const group = parent.closest(".settings-nav-group");
+        const children = group && group.querySelector(".settings-nav-children");
+        if (children) children.hidden = expanded;
+      });
     });
 
     const titleInput = document.getElementById("desktopTitleInput");

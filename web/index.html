@@ -120,7 +120,16 @@
         <div class="settings-brand">Studiolo</div>
         <nav class="settings-nav" role="tablist">
           <button type="button" data-settings-tab="desktop" class="active">桌面</button>
-          <button type="button" data-settings-tab="appearance">外观</button>
+
+          <div class="settings-nav-group" data-nav-group="appearance">
+            <button type="button" class="settings-nav-parent" aria-expanded="true">外观</button>
+            <div class="settings-nav-children">
+              <button type="button" data-settings-tab="appearance-theme">主题</button>
+              <button type="button" data-settings-tab="appearance-custom">自定义</button>
+              <button type="button" data-settings-tab="appearance-wallpaper">壁纸</button>
+            </div>
+          </div>
+
           <button type="button" data-settings-tab="data">数据</button>
         </nav>
         <div class="settings-sidebar-foot">设置</div>
@@ -163,14 +172,22 @@
             </div>
           </section>
 
-          <section data-settings-panel="appearance" hidden>
-            <div class="settings-section-title">主题</div>
+          <section data-settings-panel="appearance-theme" hidden>
             <div class="theme-store-grid" id="themeStoreGrid"></div>
 
-            <div class="settings-section-title">自定义</div>
-            <div id="themeTokenGroups" class="theme-token-groups"></div>
+            <div class="theme-actions">
+              <button type="button" class="glass-btn" id="exportThemeBtn">⬇ 导出主题</button>
+              <button type="button" class="glass-btn" id="importThemeBtn">⬆ 导入主题</button>
+              <input type="file" id="importThemeFile" accept=".yaml,.yml,.json" hidden />
+              <button type="button" class="glass-btn" id="resetThemeBtn" style="background:rgba(244,63,94,0.2)">恢复默认</button>
+            </div>
+          </section>
 
-            <div class="settings-section-title">壁纸</div>
+          <section data-settings-panel="appearance-custom" hidden>
+            <div id="themeTokenGroups" class="theme-token-groups"></div>
+          </section>
+
+          <section data-settings-panel="appearance-wallpaper" hidden>
             <div class="wp-picker-grid" id="wpPickerGrid"></div>
 
             <div class="form-field" style="margin-top:12px">
@@ -190,13 +207,6 @@
                 <input type="checkbox" id="dynamicWallpaperToggle" />
                 <span></span>
               </label>
-            </div>
-
-            <div class="theme-actions">
-              <button type="button" class="glass-btn" id="exportThemeBtn">⬇ 导出主题</button>
-              <button type="button" class="glass-btn" id="importThemeBtn">⬆ 导入主题</button>
-              <input type="file" id="importThemeFile" accept=".yaml,.yml,.json" hidden />
-              <button type="button" class="glass-btn" id="resetThemeBtn" style="background:rgba(244,63,94,0.2)">恢复默认</button>
             </div>
           </section>
 

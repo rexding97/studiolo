@@ -1329,7 +1329,7 @@ body.edit-mode .widget-resize-corner { display: grid; }
 
 /* ===== 统一设置面板 ===== */
 .settings-panel {
-  width: min(980px, 94vw);
+  width: min(1180px, 96vw);
   height: min(780px, 88vh);
   max-height: 88vh;
   overflow: hidden;
@@ -1339,7 +1339,7 @@ body.edit-mode .widget-resize-corner { display: grid; }
 }
 
 .settings-sidebar {
-  width: 190px;
+  width: 210px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -1383,6 +1383,46 @@ body.edit-mode .widget-resize-corner { display: grid; }
   padding: 0 10px;
   font-size: 11px;
   color: var(--text-secondary);
+}
+
+.settings-nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.settings-nav-parent {
+  position: relative;
+  font-weight: 500;
+}
+.settings-nav-parent::after {
+  content: "▾";
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 10px;
+  opacity: 0.55;
+  transition: transform 0.18s ease;
+}
+.settings-nav-parent[aria-expanded="false"]::after {
+  transform: translateY(-50%) rotate(-90deg);
+}
+.settings-nav-parent.active-parent {
+  color: #fff;
+}
+.settings-nav-children {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 0 2px 14px;
+}
+.settings-nav-children[hidden] {
+  display: none;
+}
+.settings-nav-children button {
+  padding: 7px 10px;
+  font-size: 12px;
+  border-radius: 8px;
 }
 
 .settings-main {

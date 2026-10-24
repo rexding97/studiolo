@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""REX Cloud OS Hub — 零依赖 HTTP 服务：静态托管 + JSON API + 后台采集。"""
+"""Studiolo Hub — 零依赖 HTTP 服务：静态托管 + JSON API + 后台采集。"""
 
 import argparse
 import json
@@ -185,7 +185,7 @@ BAD_BODY = object()
 
 
 def build_parser():
-    p = argparse.ArgumentParser(description="REX Cloud OS Hub")
+    p = argparse.ArgumentParser(description="Studiolo Hub")
     p.add_argument("--host", default="0.0.0.0")
     p.add_argument("--port", type=int, default=3002)
     p.add_argument("--web", default=DEFAULT_WEB)

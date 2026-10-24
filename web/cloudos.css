@@ -34,11 +34,16 @@
   padding: 0;
 }
 
+html {
+  font-size: var(--app-font-size, 16px);
+}
+
 html, body {
   min-height: 100vh;
   background: transparent;
   color: var(--theme-text);
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC", "Hiragino Sans GB", sans-serif;
+  font-family: var(--app-font, -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC", "Hiragino Sans GB", sans-serif);
+  line-height: var(--app-line-height, 1.5);
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
 }
@@ -1324,12 +1329,80 @@ body.edit-mode .widget-resize-corner { display: grid; }
 
 /* ===== 统一设置面板 ===== */
 .settings-panel {
-  width: min(780px, 92vw);
-  height: min(760px, 86vh);
-  max-height: 86vh;
+  width: min(980px, 94vw);
+  height: min(780px, 88vh);
+  max-height: 88vh;
   overflow: hidden;
+  padding: 0;
+  display: flex;
+  flex-direction: row;
+}
+
+.settings-sidebar {
+  width: 190px;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
+  gap: 18px;
+  padding: 24px 14px;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(8, 13, 26, 0.32);
+}
+.settings-brand {
+  padding: 0 10px;
+  font-size: 15px;
+  font-weight: 680;
+  letter-spacing: 0.01em;
+}
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.settings-nav button {
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+.settings-nav button:hover {
+  color: #eaf1fb;
+  background: rgba(255, 255, 255, 0.06);
+}
+.settings-nav button.active {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+}
+.settings-sidebar-foot {
+  margin-top: auto;
+  padding: 0 10px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.settings-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 24px 26px 20px;
+}
+
+.settings-section-title {
+  margin: 0 0 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(206, 220, 240, 0.62);
+}
+.settings-section-title:not(:first-child) {
+  margin-top: 26px;
 }
 
 .settings-head {

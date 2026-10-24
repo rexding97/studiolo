@@ -116,121 +116,110 @@
   <!-- 5. 统一设置面板 -->
   <div class="modal-backdrop" id="settingsBackdrop" hidden>
     <div class="modal-panel settings-panel">
-      <div class="settings-head">
-        <div>
-          <h3>设置</h3>
-          <div class="settings-sub">桌面行为、主题、壁纸与数据</div>
+      <aside class="settings-sidebar">
+        <div class="settings-brand">Studiolo</div>
+        <nav class="settings-nav" role="tablist">
+          <button type="button" data-settings-tab="desktop" class="active">桌面</button>
+          <button type="button" data-settings-tab="appearance">外观</button>
+          <button type="button" data-settings-tab="data">数据</button>
+        </nav>
+        <div class="settings-sidebar-foot">设置</div>
+      </aside>
+
+      <div class="settings-main">
+        <div class="settings-head">
+          <div>
+            <h3 id="settingsTitle">桌面</h3>
+            <div class="settings-sub" id="settingsSub">名称、Dock 与显示行为</div>
+          </div>
+          <button type="button" class="glass-btn" id="closeSettingsBtn" style="padding:5px 12px">✕</button>
         </div>
-        <button type="button" class="glass-btn" id="closeSettingsBtn" style="padding:5px 12px">✕</button>
-      </div>
 
-      <div class="settings-tabs" role="tablist">
-        <button type="button" data-settings-tab="desktop" class="active">桌面</button>
-        <button type="button" data-settings-tab="theme">主题</button>
-        <button type="button" data-settings-tab="store">商店</button>
-        <button type="button" data-settings-tab="wallpaper">壁纸</button>
-        <button type="button" data-settings-tab="data">数据</button>
-      </div>
-
-      <div class="settings-body">
-        <section data-settings-panel="desktop">
-          <div class="settings-row">
-            <div>
-              <div class="settings-row-title">桌面名称</div>
-              <div class="settings-row-desc">显示在顶栏与浏览器标签页。</div>
+        <div class="settings-body">
+          <section data-settings-panel="desktop">
+            <div class="settings-row">
+              <div>
+                <div class="settings-row-title">桌面名称</div>
+                <div class="settings-row-desc">显示在顶栏与浏览器标签页。</div>
+              </div>
             </div>
-          </div>
-          <div class="form-field">
-            <input type="text" id="desktopTitleInput" placeholder="Studiolo" />
-          </div>
-
-          <div class="settings-row" style="margin-top:22px">
-            <div>
-              <div class="settings-row-title">底部 Dock</div>
-              <div class="settings-row-desc">固定显示置顶应用；没有置顶时按近 7 天热度取前 8 个。</div>
+            <div class="form-field">
+              <input type="text" id="desktopTitleInput" placeholder="Studiolo" />
             </div>
-            <label class="switch">
-              <input type="checkbox" id="dockEnabledToggle" />
-              <span></span>
-            </label>
-          </div>
 
-          <div class="settings-note">
-            桌面采用 2D 绝对坐标网格：拖动时其他组件会实时让位，松手后空位保留，不会自动补全。
-          </div>
-        </section>
+            <div class="settings-row" style="margin-top:22px">
+              <div>
+                <div class="settings-row-title">底部 Dock</div>
+                <div class="settings-row-desc">固定显示置顶应用；没有置顶时按近 7 天热度取前 8 个。</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="dockEnabledToggle" />
+                <span></span>
+              </label>
+            </div>
 
-        <section data-settings-panel="theme" hidden>
-          <div class="form-field">
-            <label>精选主题预设</label>
-            <div class="theme-preset-grid" id="themePresetGrid"></div>
-          </div>
+            <div class="settings-note">
+              桌面采用 2D 绝对坐标网格：拖动时其他组件会实时让位，松手后空位保留，不会自动补全。
+            </div>
+          </section>
 
-          <div id="themeTokenGroups" class="theme-token-groups"></div>
-
-          <div class="theme-actions">
-            <button type="button" class="glass-btn" id="exportThemeBtn">⬇ 导出主题</button>
-            <button type="button" class="glass-btn" id="importThemeBtn">⬆ 导入主题</button>
-            <input type="file" id="importThemeFile" accept=".yaml,.yml,.json" hidden />
-            <button type="button" class="glass-btn" id="resetThemeBtn" style="background:rgba(244,63,94,0.2)">恢复默认主题</button>
-          </div>
-        </section>
-
-        <section data-settings-panel="store" hidden>
-          <div class="form-field">
-            <label>主题商店</label>
+          <section data-settings-panel="appearance" hidden>
+            <div class="settings-section-title">主题</div>
             <div class="theme-store-grid" id="themeStoreGrid"></div>
-          </div>
-          <div class="settings-note">
-            主题包同时包含 UI 参数与壁纸。内置主题可直接应用；远程主题包后续通过索引安装。
-          </div>
-        </section>
 
-        <section data-settings-panel="wallpaper" hidden>
-          <div class="form-field">
-            <label>精选壁纸</label>
+            <div class="settings-section-title">自定义</div>
+            <div id="themeTokenGroups" class="theme-token-groups"></div>
+
+            <div class="settings-section-title">壁纸</div>
             <div class="wp-picker-grid" id="wpPickerGrid"></div>
-          </div>
 
-          <div class="form-field" style="margin-top:14px">
-            <label>自定义图片壁纸 URL</label>
-            <div style="display:flex;gap:8px">
-              <input type="text" id="customWpUrlInput" placeholder="粘贴任意图片 URL (https://...)" />
-              <button type="button" class="glass-btn" id="applyCustomWpBtn" style="white-space:nowrap">应用图片</button>
+            <div class="form-field" style="margin-top:12px">
+              <label>自定义图片壁纸 URL</label>
+              <div style="display:flex;gap:8px">
+                <input type="text" id="customWpUrlInput" placeholder="https://..." />
+                <button type="button" class="glass-btn" id="applyCustomWpBtn" style="white-space:nowrap">应用</button>
+              </div>
             </div>
-          </div>
 
-          <div class="settings-row" style="margin-top:22px">
-            <div>
-              <div class="settings-row-title">动态壁纸</div>
-              <div class="settings-row-desc">Canvas 场景与视频会持续渲染；关闭后回退为静态渐变，更省电。</div>
+            <div class="settings-row" style="margin-top:18px">
+              <div>
+                <div class="settings-row-title">动态壁纸</div>
+                <div class="settings-row-desc">Canvas 场景与视频会持续渲染；关闭后回退为静态渐变。</div>
+              </div>
+              <label class="switch">
+                <input type="checkbox" id="dynamicWallpaperToggle" />
+                <span></span>
+              </label>
             </div>
-            <label class="switch">
-              <input type="checkbox" id="dynamicWallpaperToggle" />
-              <span></span>
-            </label>
-          </div>
-        </section>
 
-        <section data-settings-panel="data" hidden>
-          <div class="form-field">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-              <label style="margin:0">桌面完整 YAML 配置</label>
-              <span id="yamlStatusMsg" style="font-size:12px;color:#34d399"></span>
+            <div class="theme-actions">
+              <button type="button" class="glass-btn" id="exportThemeBtn">⬇ 导出主题</button>
+              <button type="button" class="glass-btn" id="importThemeBtn">⬆ 导入主题</button>
+              <input type="file" id="importThemeFile" accept=".yaml,.yml,.json" hidden />
+              <button type="button" class="glass-btn" id="resetThemeBtn" style="background:rgba(244,63,94,0.2)">恢复默认</button>
             </div>
-            <textarea class="yaml-box" id="yamlTextarea" spellcheck="false"></textarea>
-          </div>
+          </section>
 
-          <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.16)">
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <button type="button" class="glass-btn" id="downloadYamlBtn">⬇ 导出 .yaml</button>
-              <button type="button" class="glass-btn" id="uploadYamlBtn">⬆ 导入 .yaml</button>
-              <input type="file" id="uploadYamlFile" accept=".yaml,.yml,.json" hidden />
-              <button type="button" class="glass-btn" id="resetDefaultBtn" style="background:rgba(244,63,94,0.25)">恢复默认</button>
+          <section data-settings-panel="data" hidden>
+            <div class="form-field">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+                <label style="margin:0">桌面完整 YAML 配置</label>
+                <span id="yamlStatusMsg" style="font-size:12px;color:#34d399"></span>
+              </div>
+              <textarea class="yaml-box" id="yamlTextarea" spellcheck="false"></textarea>
             </div>
-            <button type="button" class="glass-btn" id="applyYamlBtn" style="background:linear-gradient(135deg,#0284c7,#38bdf8)">解析并应用</button>
-          </div>
-        </section>
+
+            <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.16)">
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button type="button" class="glass-btn" id="downloadYamlBtn">⬇ 导出 .yaml</button>
+                <button type="button" class="glass-btn" id="uploadYamlBtn">⬆ 导入 .yaml</button>
+                <input type="file" id="uploadYamlFile" accept=".yaml,.yml,.json" hidden />
+                <button type="button" class="glass-btn" id="resetDefaultBtn" style="background:rgba(244,63,94,0.25)">恢复默认</button>
+              </div>
+              <button type="button" class="glass-btn" id="applyYamlBtn" style="background:linear-gradient(135deg,#0284c7,#38bdf8)">解析并应用</button>
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   </div>

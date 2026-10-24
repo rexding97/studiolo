@@ -340,6 +340,62 @@ window.REX_THEME_TOKENS = [
     type: "color",
     default: "#ffffff",
     apply: (v) => ({ "--theme-text": v })
+  },
+  {
+    group: "type",
+    key: "fontFamily",
+    label: "字体",
+    type: "select",
+    options: [
+      { value: "system", label: "系统无衬线" },
+      { value: "rounded", label: "圆体" },
+      { value: "serif", label: "衬线" },
+      { value: "mono", label: "等宽" }
+    ],
+    default: "system",
+    apply: (v) => ({
+      "--app-font": {
+        system: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Hiragino Sans GB", sans-serif',
+        rounded: '"SF Pro Rounded", "Hiragino Maru Gothic ProN", "PingFang SC", -apple-system, sans-serif',
+        serif: 'Georgia, "Songti SC", "Noto Serif SC", serif',
+        mono: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace'
+      }[v] || '-apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif'
+    })
+  },
+  {
+    group: "type",
+    key: "baseFontSize",
+    label: "基础字号 (px)",
+    type: "range",
+    min: 14,
+    max: 20,
+    step: 1,
+    default: 16,
+    apply: (v) => ({ "--app-font-size": `${v}px` })
+  },
+  {
+    group: "type",
+    key: "headingWeight",
+    label: "标题字重",
+    type: "select",
+    options: [
+      { value: "500", label: "中等 500" },
+      { value: "600", label: "半粗 600" },
+      { value: "700", label: "粗体 700" }
+    ],
+    default: "600",
+    apply: (v) => ({ "--app-heading-weight": v })
+  },
+  {
+    group: "type",
+    key: "lineHeight",
+    label: "行高",
+    type: "range",
+    min: 1.2,
+    max: 1.8,
+    step: 0.05,
+    default: 1.5,
+    apply: (v) => ({ "--app-line-height": String(v) })
   }
 ];
 

@@ -2408,14 +2408,14 @@
    * 12. 🎨 主题工坊弹窗 (Theme Studio Modal)
    * ========================================================= */
   function initThemeStudioModal() {
-    const presetGrid = document.getElementById("themePresetGrid");
     const groupsHost = document.getElementById("themeTokenGroups");
-    if (!presetGrid || !groupsHost) return;
+    if (!groupsHost) return;
 
     const GROUP_LABELS = {
       surface: "表面与材质",
       icon: "图标与 Logo",
-      color: "颜色与文字"
+      color: "颜色与文字",
+      type: "字体与排版"
     };
 
     function currentTokens() {
@@ -2424,32 +2424,6 @@
         window.REX_THEME_PRESETS["vision-glass"].config,
         state.profile.themeCustom || {}
       );
-    }
-
-    function renderPresetCards() {
-      presetGrid.innerHTML = "";
-      Object.values(window.REX_THEME_PRESETS).forEach((preset) => {
-        const card = document.createElement("div");
-        card.className = `theme-preset-card ${state.profile.themePreset === preset.id ? "active" : ""}`;
-        card.innerHTML = `
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-            <strong style="font-size:13.5px">${escapeHtml(preset.name)}</strong>
-            <span class="widget-tag">${escapeHtml(preset.badge)}</span>
-          </div>
-          <div style="font-size:11.5px;color:var(--text-secondary);line-height:1.4">${escapeHtml(preset.desc)}</div>
-        `;
-        card.addEventListener("click", () => {
-          state.profile.themePreset = preset.id;
-          state.profile.themePack = "";
-          state.profile.themeCustom = JSON.parse(JSON.stringify(preset.config));
-          saveState();
-          applyTheme();
-          applyWallpaper();
-          renderPresetCards();
-          renderTokenEditor();
-        });
-        presetGrid.appendChild(card);
-      });
     }
 
     function buildControl(token, value) {
@@ -2526,7 +2500,6 @@
       state.profile.themePreset = "custom";
       saveState();
       applyTheme();
-      renderPresetCards();
     }
 
     function renderTokenEditor() {
@@ -2600,12 +2573,10 @@
       state.profile.themePreset = "custom";
       saveState();
       applyTheme();
-      renderPresetCards();
       renderTokenEditor();
     }
 
     window.openThemeStudio = function () {
-      renderPresetCards();
       renderTokenEditor();
     };
 
@@ -2691,7 +2662,6 @@
       saveState();
       applyTheme();
       applyWallpaper();
-      renderPresetCards();
       renderTokenEditor();
     });
   }
@@ -3466,6 +3436,12 @@
     const tabs = Array.from(document.querySelectorAll("[data-settings-tab]"));
     const panels = Array.from(document.querySelectorAll("[data-settings-panel]"));
 
+    const TAB_META = {
+      desktop: ["桌面", "名称、Dock 与显示行为"],
+      appearance: ["外观", "主题、字体、壁纸与显示效果"],
+      data: ["数据", "YAML 备份、导入与重置"]
+    };
+
     function selectTab(name) {
       tabs.forEach((btn) => btn.classList.toggle("active", btn.dataset.settingsTab === name));
       panels.forEach((panel) => {
@@ -3473,8 +3449,17 @@
       });
       const body = backdrop.querySelector(".settings-body");
       if (body) body.scrollTop = 0;
-      if (name === "theme" && window.openThemeStudio) window.openThemeStudio();
-      if (name === "store" && window.renderThemeStore) window.renderThemeStore();
+
+      const meta = TAB_META[name] || TAB_META.desktop;
+      const titleEl = document.getElementById("settingsTitle");
+      const subEl = document.getElementById("settingsSub");
+      if (titleEl) titleEl.textContent = meta[0];
+      if (subEl) subEl.textContent = meta[1];
+
+      if (name === "appearance") {
+        if (window.openThemeStudio) window.openThemeStudio();
+        if (window.renderThemeStore) window.renderThemeStore();
+      }
     }
 
     window.openSettings = function (tab) {

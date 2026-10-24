@@ -125,6 +125,35 @@ apps:
     containerId: host-mac
 ```
 
+## 环境变量
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `REXHUB_INIT_PASSWORD` | 空 | 首次启动时初始化密码，已有用户不会覆盖 |
+| `REXHUB_USER` | `admin` | 登录用户名；服务端只校验密码 |
+| `REXHUB_PORT` | `3002` | 容器内监听端口 |
+| `REXHUB_DATA_DIR` | `/app/server/data` | 数据目录 |
+| `REXHUB_DB` | `<data>/rexhub.db` | SQLite 文件路径 |
+| `PSUTIL_PROCFS_PATH` | 空 | 容器内采集宿主机指标时指向 `/host/proc` |
+| `PIP_INDEX_URL` | `https://pypi.org/simple` | 构建时的 pip 源 |
+
+## HTTP API
+
+| 方法 | 路径 | 认证 | 说明 |
+| --- | --- | --- | --- |
+| POST | `/api/v1/auth/login` | - | 密码登录，写 HttpOnly Cookie |
+| POST | `/api/v1/auth/logout` | ✓ | 注销 |
+| GET | `/api/v1/auth/me` | - | 当前会话 |
+| GET | `/api/v1/state` | ✓ | 读取桌面状态与版本号 |
+| PUT | `/api/v1/state` | ✓ | 写入状态，带 `rev` 乐观锁，冲突返回 409 |
+| GET | `/api/v1/state/meta` | ✓ | 轻量版本号，用于多端检测 |
+| GET | `/api/v1/runtime` | ✓ | 主机指标、探针、天气、点击热度 |
+| GET | `/api/v1/metrics?host=` | ✓ | 单主机历史采样 |
+| POST | `/api/v1/click` | ✓ | 记录一次点击 |
+| GET | `/api/v1/favicon?u=` | ✓ | favicon 抓取与缓存 |
+| GET | `/api/v1/weather?city=` | ✓ | Open-Meteo 代理 |
+| GET | `/api/v1/health` | - | 健康检查 |
+
 ## 目录
 
 ```

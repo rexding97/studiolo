@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Studiolo</title>
+  <link rel="stylesheet" href="cloudos.css" />
+</head>
+<body>
+  <!-- 1. 全屏艺术壁纸舞台 (无外链阻塞，确保毛玻璃呈现真实光学折射) -->
+  <div class="wallpaper-stage" id="wallpaperStage" data-scene="scene-aurora">
+    <div class="ambient-orb orb-1"></div>
+    <div class="ambient-orb orb-2"></div>
+    <div class="ambient-orb orb-3"></div>
+    <svg class="wallpaper-mountains" viewBox="0 0 1440 500" preserveAspectRatio="none">
+      <path d="M0 320L240 160L520 290L840 90L1160 250L1440 120V500H0Z" fill="rgba(15, 23, 42, 0.36)" />
+      <path d="M0 380L310 220L640 350L1020 180L1440 310V500H0Z" fill="rgba(9, 14, 28, 0.56)" />
+      <path d="M0 430L420 310L890 410L1240 280L1440 370V500H0Z" fill="rgba(6, 10, 20, 0.78)" />
+    </svg>
+    <div class="wallpaper-photo" id="wallpaperPhoto"></div>
+  </div>
+
+  <!-- 2. 桌面主壳层 -->
+  <div class="desktop-shell">
+    <header class="topbar">
+      <div class="glass-pill">
+        <span class="live-dot"></span>
+        <span class="brand-name">Studiolo</span>
+        <span class="brand-meta">私有云桌面 · 多主机入口</span>
+      </div>
+
+      <div class="top-actions">
+        <span class="sync-indicator" id="syncIndicator" data-state="idle" title="正在连接…">
+          <i></i><b>连接中</b>
+          <em class="sync-tip" id="syncTip">等待首次同步</em>
+        </span>
+
+        <button type="button" class="glass-btn" id="toggleEditModeBtn">✦ 编辑桌面</button>
+        <button type="button" class="glass-btn" id="openSettingsBtn">⚙ 设置</button>
+      </div>
+    </header>
+
+    <!-- 英雄区：大时钟 + 全能搜索 Omni-Bar -->
+    <section class="hero-area">
+      <div class="hero-clock" id="heroClock">00:00:00</div>
+      <div class="hero-sub" id="heroGreeting">正在加载时间与节点状态...</div>
+
+      <div class="omni-container">
+        <div class="omni-bar">
+          <button type="button" class="engine-chip" id="engineCycleBtn" title="点击切换网页搜索引擎">Google ▾</button>
+          <input
+            type="text"
+            id="omniInput"
+            class="omni-input"
+            placeholder="搜索任意应用 / 服务器 / 收藏，或直接回车网页搜索..."
+            autocomplete="off"
+          />
+          <span class="omni-kbd">/ 聚焦</span>
+        </div>
+        <div class="omni-dropdown" id="omniDropdown" hidden></div>
+      </div>
+    </section>
+
+    <!-- 编辑模式工具条 -->
+    <div class="edit-drawer" id="editBanner" hidden>
+      <div style="font-size:13px;line-height:1.5;color:#fef3c7">
+        ✦ <strong>编辑模式</strong>：拖动图标或组件即可重新排布，空出的位置会被保留，不会自动补全。点击桌面空白处退出。
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="glass-btn" id="bannerAddWidgetBtn">＋ 新增组件</button>
+        <button type="button" class="glass-btn" id="bannerAddAppBtn">＋ 新增应用</button>
+        <button type="button" class="glass-btn" id="bannerYamlBtn">⇅ 导入 / 导出</button>
+        <button type="button" class="glass-btn active-edit" id="exitEditBannerBtn">✓ 完成</button>
+      </div>
+    </div>
+
+    <!-- 主工作区：2D 绝对坐标棋盘网格 -->
+    <main class="workspace" id="workspace"></main>
+
+    <!-- 可选底部 Dock -->
+    <nav class="stage-dock" id="stageDock" hidden></nav>
+  </div>
+
+  <!-- 3. 文件夹放大面板 -->
+  <div class="folder-backdrop" id="folderBackdrop">
+    <div class="folder-expanded-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+        <div>
+          <h2 id="folderModalTitle" style="font-size:22px;font-weight:700">组件全部应用</h2>
+          <div id="folderModalMeta" style="font-size:13px;color:var(--text-secondary);margin-top:4px"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <button type="button" class="glass-btn" id="folderSortBtn" style="padding:7px 14px;font-size:12px">⇅ 切换排序</button>
+          <button type="button" class="glass-btn" id="folderConfigWidgetBtn" style="padding:7px 14px;font-size:12px">⚙ 配置此组件</button>
+          <button type="button" class="glass-btn" id="folderAddAppBtn" style="padding:7px 14px;font-size:12px">＋ 添加图标</button>
+          <button type="button" class="glass-btn" id="closeFolderModalBtn" style="padding:7px 14px;font-size:12px">✕ 收起</button>
+        </div>
+      </div>
+      <div class="folder-expanded-grid" id="folderExpandedGrid"></div>
+      <div class="folder-dragout-hint">💡 点击遮罩空白处收起；也可以把图标拖出弹窗。</div>
+    </div>
+  </div>
+
+  <!-- 3.5 拖拽回收站 -->
+  <div class="trash-dock" id="trashDock">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <polyline points="3 6 5 6 21 6"></polyline>
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+    </svg>
+    <span id="trashDockText">拖到此处即可删除</span>
+  </div>
+
+  <!-- 4. 悬停透视卡片 -->
+  <div class="app-popover" id="appPopover" role="tooltip"></div>
+
+  <!-- 5. 统一设置面板 -->
+  <div class="modal-backdrop" id="settingsBackdrop" hidden>
+    <div class="modal-panel settings-panel">
+      <div class="settings-head">
+        <div>
+          <h3>设置</h3>
+          <div class="settings-sub">桌面行为、主题、壁纸与数据</div>
+        </div>
+        <button type="button" class="glass-btn" id="closeSettingsBtn" style="padding:5px 12px">✕</button>
+      </div>
+
+      <div class="settings-tabs" role="tablist">
+        <button type="button" data-settings-tab="desktop" class="active">桌面</button>
+        <button type="button" data-settings-tab="theme">主题</button>
+        <button type="button" data-settings-tab="wallpaper">壁纸</button>
+        <button type="button" data-settings-tab="data">数据</button>
+      </div>
+
+      <div class="settings-body">
+        <section data-settings-panel="desktop">
+          <div class="settings-row">
+            <div>
+              <div class="settings-row-title">桌面名称</div>
+              <div class="settings-row-desc">显示在顶栏与浏览器标签页。</div>
+            </div>
+          </div>
+          <div class="form-field">
+            <input type="text" id="desktopTitleInput" placeholder="Studiolo" />
+          </div>
+
+          <div class="settings-row" style="margin-top:22px">
+            <div>
+              <div class="settings-row-title">底部 Dock</div>
+              <div class="settings-row-desc">固定显示置顶应用；没有置顶时按近 7 天热度取前 8 个。</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="dockEnabledToggle" />
+              <span></span>
+            </label>
+          </div>
+
+          <div class="settings-note">
+            桌面采用 2D 绝对坐标网格：拖动时其他组件会实时让位，松手后空位保留，不会自动补全。
+          </div>
+        </section>
+
+        <section data-settings-panel="theme" hidden>
+          <div class="form-field">
+            <label>精选主题预设</label>
+            <div class="theme-preset-grid" id="themePresetGrid"></div>
+          </div>
+
+          <div class="form-grid" style="padding-top:10px;border-top:1px solid rgba(255,255,255,0.14)">
+            <div class="form-field">
+              <label>图标几何形状</label>
+              <select id="thIconShape">
+                <option value="squircle">iOS 超椭圆 (Squircle · 28%)</option>
+                <option value="circle">现代正圆形 (Circle · 50%)</option>
+                <option value="rounded">硬朗方圆角 (Rounded · 16%)</option>
+                <option value="sharp">极简微锐角 (Sharp · 8%)</option>
+              </select>
+            </div>
+
+            <div class="form-field">
+              <label>图标底座材质</label>
+              <select id="thIconSurface">
+                <option value="gradient">炫彩品牌渐变底座</option>
+                <option value="frosted">统一冰川毛玻璃底座</option>
+                <option value="dark-matte">曜石暗夜哑光底座</option>
+                <option value="neon-ring">赛博发光霓虹环</option>
+              </select>
+            </div>
+
+            <div class="form-field form-full">
+              <label>网站原生 Logo 处理方式</label>
+              <select id="thLogoMode">
+                <option value="badge-pad">白瓷圆角衬垫</option>
+                <option value="bleed-cover">满幅出血填充</option>
+                <option value="raw-clean">纯净免衬底直出</option>
+                <option value="mono-white">智能纯白符号化</option>
+              </select>
+            </div>
+
+            <div class="form-field">
+              <label>卡片毛玻璃模糊度 (Blur px)</label>
+              <input type="range" id="thCardBlur" min="0" max="60" step="2" />
+            </div>
+
+            <div class="form-field">
+              <label>卡片表面不透明度</label>
+              <input type="range" id="thCardOpacity" min="0.04" max="0.65" step="0.02" />
+            </div>
+
+            <div class="form-field">
+              <label>卡片圆角曲率</label>
+              <input type="range" id="thCardRadius" min="8" max="42" step="2" />
+            </div>
+
+            <div class="form-field">
+              <label>高光边框强度</label>
+              <input type="range" id="thCardBorder" min="0.08" max="0.6" step="0.02" />
+            </div>
+
+            <div class="form-field">
+              <label>图标整体缩放</label>
+              <input type="range" id="thIconScale" min="0.82" max="1.15" step="0.02" />
+            </div>
+
+            <div class="form-field">
+              <label>全局强调色</label>
+              <input type="text" id="thAccentColor" placeholder="#38bdf8" />
+            </div>
+
+            <div class="form-field form-full">
+              <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;color:#fff;margin:0">
+                <input type="checkbox" id="thIconGloss" style="width:auto" checked />
+                ✨ 开启图标顶部弧面玻璃光泽
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <section data-settings-panel="wallpaper" hidden>
+          <div class="form-field">
+            <label>精选壁纸</label>
+            <div class="wp-picker-grid" id="wpPickerGrid"></div>
+          </div>
+
+          <div class="form-field" style="margin-top:14px">
+            <label>自定义图片壁纸 URL</label>
+            <div style="display:flex;gap:8px">
+              <input type="text" id="customWpUrlInput" placeholder="粘贴任意图片 URL (https://...)" />
+              <button type="button" class="glass-btn" id="applyCustomWpBtn" style="white-space:nowrap">应用图片</button>
+            </div>
+          </div>
+        </section>
+
+        <section data-settings-panel="data" hidden>
+          <div class="form-field">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+              <label style="margin:0">桌面完整 YAML 配置</label>
+              <span id="yamlStatusMsg" style="font-size:12px;color:#34d399"></span>
+            </div>
+            <textarea class="yaml-box" id="yamlTextarea" spellcheck="false"></textarea>
+          </div>
+
+          <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-top:18px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.16)">
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button type="button" class="glass-btn" id="downloadYamlBtn">⬇ 导出 .yaml</button>
+              <button type="button" class="glass-btn" id="uploadYamlBtn">⬆ 导入 .yaml</button>
+              <input type="file" id="uploadYamlFile" accept=".yaml,.yml,.json" hidden />
+              <button type="button" class="glass-btn" id="resetDefaultBtn" style="background:rgba(244,63,94,0.25)">恢复默认</button>
+            </div>
+            <button type="button" class="glass-btn" id="applyYamlBtn" style="background:linear-gradient(135deg,#0284c7,#38bdf8)">解析并应用</button>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. 组件配置器 -->
+  <div class="modal-backdrop" id="widgetConfigBackdrop" hidden>
+    <div class="modal-panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+        <h3 id="wcfgModalTitle" style="font-size:18px;font-weight:680">配置组件</h3>
+        <button type="button" class="glass-btn" id="closeWcfgModalBtn" style="padding:5px 12px">✕</button>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-field">
+          <label>组件标题名称</label>
+          <input type="text" id="wcfgTitleInput" placeholder="例如：Office · 公司机房服务器" />
+        </div>
+        <div class="form-field">
+          <label>右上角状态徽章 / 标签</label>
+          <input type="text" id="wcfgBadgeInput" placeholder="例如：核心算力 / 常用书签" />
+        </div>
+
+        <div class="form-field">
+          <label>组件占用列宽 (W)</label>
+          <select id="wcfgWidthSelect">
+            <option value="2">2 列宽 (紧凑)</option>
+            <option value="3">3 列宽 (1/4 屏)</option>
+            <option value="4">4 列宽 (1/3 屏)</option>
+            <option value="5">5 列宽 (黄金宽)</option>
+            <option value="6">6 列宽 (半屏宽)</option>
+            <option value="8">8 列宽 (2/3 屏)</option>
+            <option value="12">12 列宽 (整行全宽)</option>
+          </select>
+        </div>
+
+        <div class="form-field">
+          <label>组件占用行高 (H)</label>
+          <select id="wcfgHeightSelect">
+            <option value="1">1 行高 (单排紧凑)</option>
+            <option value="2">2 行高 (双排标准)</option>
+            <option value="3">3 行高 (三排大号)</option>
+            <option value="4">4 行高 (四排巨幅)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-grid" id="wcfgDynamicFields" style="margin-top:13px"></div>
+
+      <div style="display:flex;justify-content:space-between;margin-top:22px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.16)">
+        <button type="button" class="glass-btn" id="deleteWidgetBtn" style="background:rgba(244,63,94,0.28);border-color:rgba(244,63,94,0.5)">删除此组件</button>
+        <button type="button" class="glass-btn" id="saveWcfgBtn" style="background:linear-gradient(135deg,#0284c7,#38bdf8)">保存组件配置</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. 新增可复用组件 -->
+  <div class="modal-backdrop" id="widgetStoreBackdrop" hidden>
+    <div class="modal-panel" style="max-width:680px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+        <div>
+          <h3 style="font-size:18px;font-weight:680">＋ 新增可复用小组件</h3>
+          <div style="font-size:12.5px;color:var(--text-secondary);margin-top:3px">
+            服务器、收藏夹、天气、日历、便签都可以无限复用，点击后在桌面空位创建新实例。
+          </div>
+        </div>
+        <button type="button" class="glass-btn" id="closeWidgetStoreBtn" style="padding:5px 12px">✕</button>
+      </div>
+
+      <div class="catalog-grid" id="widgetCatalogGrid"></div>
+    </div>
+  </div>
+
+  <!-- 8. 应用/网站图标定制器 -->
+  <div class="modal-backdrop" id="appModalBackdrop" hidden>
+    <div class="modal-panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
+        <h3 id="appModalTitle" style="font-size:18px;font-weight:680">定制应用图标</h3>
+        <button type="button" class="glass-btn" id="closeAppModalBtn" style="padding:5px 12px">✕</button>
+      </div>
+
+      <div class="form-grid">
+        <div class="form-field">
+          <label>应用 / 网站名称</label>
+          <input type="text" id="appNameInput" placeholder="例如：Kimi Code / GitHub" />
+        </div>
+        <div class="form-field">
+          <label>简短副标题</label>
+          <input type="text" id="appDescInput" placeholder="例如：AI 编码工作台" />
+        </div>
+
+        <div class="form-field form-full">
+          <label>跳转地址 (URL)</label>
+          <input type="text" id="appHrefInput" placeholder="https://..." />
+        </div>
+
+        <div class="form-field form-full">
+          <label style="display:flex;align-items:center;justify-content:space-between">
+            <span>自定义 Logo 图片地址 (留空则自动抓取网站 favicon)</span>
+            <label style="display:inline-flex;align-items:center;gap:6px;margin:0;color:#fff;cursor:pointer">
+              <input type="checkbox" id="appUseSiteLogoCheck" style="width:auto" checked />
+              优先使用原网页 Logo
+            </label>
+          </label>
+          <input type="text" id="appLogoUrlInput" placeholder="可选：PNG/SVG/ICO 地址" />
+        </div>
+
+        <div class="form-field">
+          <label>归属的容器组件</label>
+          <select id="appContainerSelect"></select>
+        </div>
+
+        <div class="form-field">
+          <label>状态与端口</label>
+          <div style="display:flex;gap:8px">
+            <select id="appStatusSelect" style="flex:1">
+              <option value="online">🟢 在线</option>
+              <option value="lan">🔵 仅内网</option>
+              <option value="offline">🔴 离线</option>
+            </select>
+            <input type="text" id="appPortInput" placeholder="端口" style="width:86px" />
+          </div>
+        </div>
+
+        <div class="form-field form-full">
+          <label>内置品牌图标 (网站无 Logo 时展示)</label>
+          <div class="icon-picker-grid" id="iconPickerGrid"></div>
+        </div>
+
+        <div class="form-field form-full">
+          <label>图标底座渐变配色</label>
+          <input type="text" id="appColorInput" />
+        </div>
+
+        <div class="form-field form-full">
+          <label>鼠标悬停备注</label>
+          <input type="text" id="appNoteInput" placeholder="自定义说明、登录提示等..." />
+        </div>
+
+        <div class="form-field form-full" style="display:flex;flex-direction:column;gap:8px;padding-top:4px">
+          <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;color:#fff;margin:0">
+            <input type="checkbox" id="appStandaloneCheck" style="width:auto" />
+            🌟 <strong>同时在桌面上放置 1×1 独立裸图标</strong>
+          </label>
+          <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;color:#fff;margin:0">
+            <input type="checkbox" id="appPinnedCheck" style="width:auto" />
+            📌 同时固定到底部 Dock
+          </label>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:space-between;margin-top:20px;padding-top:16px;border-top:1px solid rgba(255,255,255,0.16)">
+        <button type="button" class="glass-btn" id="deleteAppBtn" style="background:rgba(244,63,94,0.28);border-color:rgba(244,63,94,0.5)">删除此应用</button>
+        <button type="button" class="glass-btn" id="saveAppBtn" style="background:linear-gradient(135deg,#0284c7,#38bdf8)">保存更改</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="authOverlay" class="auth-overlay" hidden>
+    <form id="authForm" class="auth-card" autocomplete="on">
+      <div class="auth-mark">S</div>
+      <h2>Studiolo</h2>
+      <p class="auth-sub">私有桌面 · 需要访问密码</p>
+      <p id="authHint" class="auth-hint">请输入访问密码</p>
+      <input id="authPassword" type="password" name="password" autocomplete="current-password" placeholder="访问密码" required />
+      <button type="submit" class="auth-submit">进入桌面</button>
+    </form>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="cloudos.js"></script>
+</body>
+</html>

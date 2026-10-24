@@ -1,0 +1,9 @@
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example
+__pycache__/
+*.pyc
+private/
+server/data/

@@ -1,0 +1,294 @@
+# Studiolo 示例配置：可直接在「设置 → 数据」中导入
+version: "4.0"
+profile:
+  title: "Studiolo"
+  owner: "your-name"
+  layoutMode: "bento"
+  dockEnabled: true
+  wallpaper: "aurora-peaks"
+  customWallpaperUrl: ""
+  searchEngine: "google"
+  themePreset: "vision-glass"
+  themeCustomJson: ""
+layout:
+  - id: "host-mac"
+    kind: "widget"
+    x: 1
+    y: 1
+    w: 4
+    h: 2
+    widgetType: "server-node"
+    configJson: "{\"title\": \"Mac · 主入口\", \"badge\": \"公网入口\", \"ip\": \"192.168.1.10\", \"lanIp\": \"192.168.1.10\", \"role\": \"TLS 终结 · 本机服务\", \"pingMs\": 1, \"cpu\": \"--\", \"mem\": \"--\", \"disk\": \"--\", \"uptime\": \"--\", \"sortBy\": \"order\"}"
+  - id: "host-office"
+    kind: "widget"
+    x: 5
+    y: 1
+    w: 4
+    h: 2
+    widgetType: "server-node"
+    configJson: "{\"title\": \"Home Lab · 应用服务器\", \"badge\": \"自托管应用\", \"ip\": \"192.168.1.20\", \"lanIp\": \"192.168.1.20\", \"role\": \"容器与内部服务\", \"pingMs\": 2, \"cpu\": \"--\", \"mem\": \"--\", \"disk\": \"--\", \"uptime\": \"--\", \"sortBy\": \"order\"}"
+  - id: "host-fnas"
+    kind: "widget"
+    x: 9
+    y: 1
+    w: 4
+    h: 2
+    widgetType: "server-node"
+    configJson: "{\"title\": \"NAS · 存储节点\", \"badge\": \"文件与备份\", \"ip\": \"192.168.1.30\", \"lanIp\": \"192.168.1.30\", \"role\": \"家庭存储\", \"pingMs\": 3, \"cpu\": \"--\", \"mem\": \"--\", \"disk\": \"--\", \"uptime\": \"--\", \"sortBy\": \"order\"}"
+  - id: "folder-favorites"
+    kind: "widget"
+    x: 1
+    y: 3
+    w: 3
+    h: 2
+    widgetType: "app-folder"
+    configJson: "{\"title\": \"常用收藏\", \"badge\": \"书签集合\", \"subtitle\": \"把常去的网站拖进来\", \"sortBy\": \"order\"}"
+  - id: "widget-weather"
+    kind: "widget"
+    x: 4
+    y: 3
+    w: 3
+    h: 2
+    widgetType: "weather"
+    configJson: "{\"title\": \"实时天气\", \"city\": \"上海\", \"temp\": \"--\", \"condition\": \"——\", \"range\": \"-- / --\", \"humidity\": \"--\"}"
+  - id: "widget-notes"
+    kind: "widget"
+    x: 7
+    y: 3
+    w: 3
+    h: 2
+    widgetType: "notes"
+    configJson: "{\"title\": \"随手便签\", \"badge\": \"自动保存\", \"text\": \"欢迎使用 Studiolo。\\n\\n• 拖动图标可重新排布\\n• 编辑模式下可新增组件\\n• 设置里可切换主题、壁纸与 Dock\"}"
+  - id: "widget-clock"
+    kind: "widget"
+    x: 10
+    y: 3
+    w: 2
+    h: 1
+    widgetType: "clock-metric"
+    configJson: "{\"title\": \"系统脉冲\", \"badge\": \"本地服务正常\", \"subtitle\": \"状态每 12 秒刷新\"}"
+apps:
+  - id: "github"
+    name: "GitHub"
+    desc: "代码托管与协作"
+    href: "https://github.com"
+    containerId: "host-mac"
+    icon: "github"
+    logoUrl: ""
+    color: "linear-gradient(145deg, #161b22 0%, #30363d 100%)"
+    status: "online"
+    port: ""
+    note: "示例：可替换成你自己的仓库地址"
+    useSiteLogo: true
+    pinned: true
+    clicks: 0
+  - id: "chatgpt"
+    name: "ChatGPT"
+    desc: "通用 AI 助手"
+    href: "https://chatgpt.com"
+    containerId: "host-mac"
+    icon: "globe"
+    logoUrl: ""
+    color: "linear-gradient(145deg, #10a37f 0%, #0d8a6a 100%)"
+    status: "online"
+    port: ""
+    note: ""
+    useSiteLogo: true
+    pinned: false
+    clicks: 0
+  - id: "claude"
+    name: "Claude"
+    desc: "长文本与代码助手"
+    href: "https://claude.ai"
+    containerId: "host-mac"
+    icon: "star"
+    logoUrl: ""
+    color: "linear-gradient(145deg, #d97757 0%, #b45309 100%)"
+    status: "online"
+    port: ""
+    note: ""
+    useSiteLogo: true
+    pinned: false
+    clicks: 0
+  - id: "kimi"
+    name: "Kimi"
+    desc: "中文长上下文助手"
+    href: "https://kimi.moonshot.cn"
+    containerId: "host-mac"
+    icon: "kimi"
+    logoUrl: ""
+    color: "linear-gradient(145deg, #0f172a 0%, #312e81 50%, #6366f1 100%)"
+    status: "online"
+    port: ""
+    note: ""
+    useSiteLogo: true
+    pinned: false
+    clicks: 0
+  - id: "vercel"
+    name: "Vercel"
+    desc: "前端部署与预览"
+    href: "https://vercel.com"
+    containerId: "host-office"
+    icon: "globe"
+    logoUrl: ""
+    color: "linear-gradient(145deg, #111827 0%, #374151 100%)"
+    status: "online"
+    port: ""
+    note: ""
+    useSiteLogo: true
+    pinned: false
+    clicks: 0
+  - id: "cloudflare"
+    name: "Cloudflare"
+    desc: "DNS 与边缘网络"
+    href: "https://dash.cloudflare.com"
+    containerId: "host-office"
+    icon: "globe"
+    logoUrl: ""
+    color: "linear-gradient(145deg, #f59e0b 0%, #ea580c 100%)"
+    status: "online"
+    port: ""
+    note: ""
+    useSiteLogo: true
+    pinned: false
+    clicks: 0
+  - id: "notion"
+    name: "Notion"
+    desc: "文档与知识库"
+    href: "https://www.notion.so"
+    containerId: "host-office"
+    icon: "label"
+    logoUrl: ""
+    color: "linear-gradient(145deg, #f3f4f6 0%, #d1d5db 100%)"
+    status: "online"
+    port: ""
+    note: "浅色底座示例"
+    useSiteLogo: true
+    pinned: true
+    clicks: 0
+  - id: "linear"
+    name: "Linear"
+    desc: "项目管理与 Issue"
+    href: "https://linear.app"
+    containerId: "host-office"
+    icon: "sync"
+    logoUrl: ""
+    color: "linear-gradient(145deg, #5e6ad2 0%, #4338ca 100%)"
+    status: "online"
+    port: ""
+    note: ""
+    useSiteLogo: true
+    pinned: false
+    clicks: 0
+  - id: "figma"
+    name: "Figma"
+    desc: "界面设计与原型"
+    href: "https://www.figma.com"
+    containerId: "host-office"
+    icon: "image"
+    logoUrl: ""
+    color: "linear-gradient(145deg, #f24e1e 0%, #a259ff 55%, #1abcfe 100%)"
+    status: "online"
+    port: ""
+    note: ""
+    useSiteLogo: true
+    pinned: false
+    clicks: 0
+  - id: "youtube"
+    name: "YouTube"
+    desc: "视频与订阅"
+    href: "https://www.youtube.com"
+    containerId: "host-fnas"
+    icon: "globe"
+    logoUrl: ""
+    color: "linear-gradient(145deg, #ff0000 0%, #991b1b 100%)"
+    status: "online"
+    port: ""
+    note: ""
+    useSiteLogo: true
+    pinned: false
+    clicks: 0
+  - id: "bilibili"
+    name: "哔哩哔哩"
+    desc: "中文视频社区"
+    href: "https://www.bilibili.com"
+    containerId: "host-fnas"
+    icon: "globe"
+    logoUrl: ""
+    color: "linear-gradient(145deg, #fb7299 0%, #f43f5e 100%)"
+    status: "online"
+    port: ""
+    note: ""
+    useSiteLogo: true
+    pinned: true
+    clicks: 0
+  - id: "zhihu"
+    name: "知乎"
+    desc: "问答与专栏"
+    href: "https://www.zhihu.com"
+    containerId: "host-fnas"
+    icon: "globe"
+    logoUrl: ""
+    color: "linear-gradient(145deg, #0084ff 0%, #1d4ed8 100%)"
+    status: "online"
+    port: ""
+    note: ""
+    useSiteLogo: true
+    pinned: false
+    clicks: 0
+  - id: "douban"
+    name: "豆瓣"
+    desc: "书影音记录"
+    href: "https://www.douban.com"
+    containerId: "host-fnas"
+    icon: "star"
+    logoUrl: ""
+    color: "linear-gradient(145deg, #2e963d 0%, #166534 100%)"
+    status: "online"
+    port: ""
+    note: ""
+    useSiteLogo: true
+    pinned: false
+    clicks: 0
+  - id: "gmail"
+    name: "Gmail"
+    desc: "邮件"
+    href: "https://mail.google.com"
+    containerId: "folder-favorites"
+    icon: "label"
+    logoUrl: ""
+    color: "linear-gradient(145deg, #ea4335 0%, #b91c1c 100%)"
+    status: "online"
+    port: ""
+    note: ""
+    useSiteLogo: true
+    pinned: false
+    clicks: 0
+  - id: "drive"
+    name: "Google Drive"
+    desc: "云端文件"
+    href: "https://drive.google.com"
+    containerId: "folder-favorites"
+    icon: "sync"
+    logoUrl: ""
+    color: "linear-gradient(145deg, #34a853 0%, #166534 100%)"
+    status: "online"
+    port: ""
+    note: ""
+    useSiteLogo: true
+    pinned: false
+    clicks: 0
+  - id: "calendar"
+    name: "Google Calendar"
+    desc: "日程"
+    href: "https://calendar.google.com"
+    containerId: "folder-favorites"
+    icon: "label"
+    logoUrl: ""
+    color: "linear-gradient(145deg, #4285f4 0%, #1e40af 100%)"
+    status: "online"
+    port: ""
+    note: ""
+    useSiteLogo: true
+    pinned: false
+    clicks: 0

@@ -1738,3 +1738,147 @@ body.dock-on .desktop-shell { padding-bottom: 96px; }
   font-size: 12px;
   text-align: center;
 }
+
+/* ===== 移动端适配 ===== */
+@media (max-width: 720px) {
+  .desktop-shell {
+    padding: 0 12px;
+  }
+
+  .topbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px 0 6px;
+  }
+  .glass-pill {
+    width: 100%;
+  }
+  .brand-meta {
+    display: none;
+  }
+  .top-actions {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+  .sync-indicator {
+    padding: 6px 9px;
+  }
+  .sync-indicator b {
+    display: none;
+  }
+  #toggleEditModeBtn {
+    display: none;
+  }
+
+  .hero-area {
+    padding: 6px 0 14px;
+  }
+  .hero-clock {
+    font-size: 44px;
+  }
+  .hero-sub {
+    font-size: 11.5px;
+  }
+  .omni-bar {
+    width: 100%;
+  }
+  .omni-kbd {
+    display: none;
+  }
+
+  .atomic-grid {
+    grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
+    grid-auto-rows: auto !important;
+    gap: 12px !important;
+    min-height: 0 !important;
+  }
+  .atomic-grid > .widget-shell {
+    grid-column: 1 / -1 !important;
+    grid-row: auto !important;
+  }
+  .atomic-grid > .app-unit {
+    grid-column: span 3 !important;
+    grid-row: auto !important;
+  }
+  .grid-slot-indicator {
+    display: none !important;
+  }
+  .widget-shell {
+    padding: 14px 13px;
+  }
+
+  .settings-panel {
+    width: 100vw;
+    height: 100vh;
+    max-height: 100vh;
+    border-radius: 0;
+    flex-direction: column;
+  }
+  .settings-sidebar {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border-right: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    overflow-x: auto;
+  }
+  .settings-brand,
+  .settings-sidebar-foot {
+    display: none;
+  }
+  .settings-nav {
+    flex-direction: row;
+    gap: 4px;
+  }
+  .settings-nav-group {
+    flex-direction: row;
+  }
+  .settings-nav-children {
+    flex-direction: row;
+    gap: 2px;
+    padding: 0;
+  }
+  .settings-nav button {
+    white-space: nowrap;
+  }
+  .settings-nav-parent::after {
+    display: none;
+  }
+  .settings-main {
+    padding: 14px;
+  }
+  .settings-head h3 {
+    font-size: 17px;
+  }
+  .settings-body {
+    padding-right: 0;
+  }
+  .theme-store-grid {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  }
+  .folder-expanded-card {
+    width: 96vw;
+    max-height: 86vh;
+  }
+}
+
+@media (max-width: 420px) {
+  .atomic-grid > .app-unit {
+    grid-column: span 4 !important;
+  }
+  .hero-clock {
+    font-size: 38px;
+  }
+  .top-actions .glass-btn {
+    padding: 7px 10px;
+    font-size: 12px;
+  }
+  .settings-nav button {
+    padding: 8px 9px;
+    font-size: 12px;
+  }
+}

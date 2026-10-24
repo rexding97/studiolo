@@ -2702,6 +2702,14 @@
             <input type="text" id="wcfgRole" value="${escapeHtml(cfg.role || "")}" />
           </div>
           <div class="form-field">
+            <label>SSH 用户名</label>
+            <input type="text" id="wcfgSshUser" value="${escapeHtml(cfg.sshUser || "root")}" placeholder="root" />
+          </div>
+          <div class="form-field">
+            <label>SSH 端口</label>
+            <input type="text" id="wcfgSshPort" value="${escapeHtml(cfg.sshPort || "22")}" placeholder="22" />
+          </div>
+          <div class="form-field">
             <label>CPU / 内存显示</label>
             <div style="display:flex;gap:8px">
               <input type="text" id="wcfgCpu" value="${escapeHtml(cfg.cpu || "15%")}" placeholder="CPU" />
@@ -2794,6 +2802,9 @@
         item.config.ip = getVal("wcfgIp");
         item.config.lanIp = getVal("wcfgLanIp");
         item.config.role = getVal("wcfgRole");
+        item.config.sshUser = getVal("wcfgSshUser") || "root";
+        const sshPort = parseInt(getVal("wcfgSshPort") || "22", 10);
+        item.config.sshPort = Number.isFinite(sshPort) && sshPort > 0 && sshPort < 65536 ? sshPort : 22;
         item.config.cpu = getVal("wcfgCpu");
         item.config.mem = getVal("wcfgMem");
         item.config.sortBy = getVal("wcfgSortBy") || "order";

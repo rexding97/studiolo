@@ -191,6 +191,158 @@ window.REX_THEME_PRESETS = {
   }
 };
 
+window.REX_THEME_TOKENS = [
+  {
+    group: "surface",
+    key: "cardBgOpacity",
+    label: "卡片表面不透明度",
+    type: "range",
+    min: 0.04,
+    max: 0.65,
+    step: 0.02,
+    default: 0.14,
+    apply: (v) => ({
+      "--theme-card-bg": `linear-gradient(145deg, rgba(255,255,255,${v}) 0%, rgba(15,23,42,${Math.min(0.85, Number(v) * 1.2)}) 100%)`
+    })
+  },
+  {
+    group: "surface",
+    key: "cardBlur",
+    label: "毛玻璃模糊度 (px)",
+    type: "range",
+    min: 0,
+    max: 60,
+    step: 2,
+    default: 32,
+    apply: (v) => ({ "--theme-card-blur": `${v}px` })
+  },
+  {
+    group: "surface",
+    key: "cardRadius",
+    label: "卡片圆角 (px)",
+    type: "range",
+    min: 8,
+    max: 42,
+    step: 2,
+    default: 28,
+    apply: (v) => ({ "--theme-card-radius": `${v}px` })
+  },
+  {
+    group: "surface",
+    key: "cardBorderOpacity",
+    label: "高光边框强度",
+    type: "range",
+    min: 0.08,
+    max: 0.6,
+    step: 0.02,
+    default: 0.28,
+    apply: (v) => ({ "--theme-card-border": `rgba(255,255,255,${v})` })
+  },
+  {
+    group: "surface",
+    key: "cardShadowStrength",
+    label: "投影强度",
+    type: "range",
+    min: 0.1,
+    max: 0.8,
+    step: 0.02,
+    default: 0.45,
+    apply: (v, all) => ({
+      "--theme-card-shadow": `0 20px 42px -12px rgba(0,0,0,${v}), inset 0 1.5px 1px 0 rgba(255,255,255,${Math.min(0.6, Number(all.cardBorderOpacity ?? 0.28) * 1.3)})`
+    })
+  },
+  {
+    group: "surface",
+    key: "gridGap",
+    label: "网格间距 (px)",
+    type: "range",
+    min: 8,
+    max: 32,
+    step: 2,
+    default: 18,
+    apply: (v) => ({ "--theme-grid-gap": `${v}px` })
+  },
+  {
+    group: "icon",
+    key: "iconShape",
+    label: "图标几何形状",
+    type: "select",
+    options: [
+      { value: "squircle", label: "iOS 超椭圆" },
+      { value: "circle", label: "正圆形" },
+      { value: "rounded", label: "圆角方形" },
+      { value: "sharp", label: "微锐角" }
+    ],
+    default: "squircle",
+    apply: (v) => ({
+      "--theme-icon-radius": { squircle: "18px", circle: "50%", rounded: "11px", sharp: "5px" }[v] || "18px"
+    })
+  },
+  {
+    group: "icon",
+    key: "iconSurface",
+    label: "图标底座材质",
+    type: "select",
+    options: [
+      { value: "gradient", label: "品牌渐变" },
+      { value: "frosted", label: "冰川毛玻璃" },
+      { value: "dark-matte", label: "曜石哑光" },
+      { value: "neon-ring", label: "霓虹描边" }
+    ],
+    default: "gradient",
+    dataset: "iconSurface"
+  },
+  {
+    group: "icon",
+    key: "logoMode",
+    label: "网站 Logo 处理",
+    type: "select",
+    options: [
+      { value: "badge-pad", label: "白瓷衬垫" },
+      { value: "bleed-cover", label: "满幅出血" },
+      { value: "raw-clean", label: "纯净直出" },
+      { value: "mono-white", label: "纯白符号化" }
+    ],
+    default: "badge-pad",
+    dataset: "logoMode"
+  },
+  {
+    group: "icon",
+    key: "iconScale",
+    label: "图标缩放",
+    type: "range",
+    min: 0.82,
+    max: 1.15,
+    step: 0.02,
+    default: 1,
+    apply: (v) => ({ "--theme-icon-scale": String(v) })
+  },
+  {
+    group: "icon",
+    key: "iconGloss",
+    label: "顶部弧面光泽",
+    type: "toggle",
+    default: true,
+    dataset: "iconGloss"
+  },
+  {
+    group: "color",
+    key: "accentColor",
+    label: "全局强调色",
+    type: "color",
+    default: "#38bdf8",
+    apply: (v) => ({ "--theme-accent": v })
+  },
+  {
+    group: "color",
+    key: "textPrimary",
+    label: "主文字颜色",
+    type: "color",
+    default: "#ffffff",
+    apply: (v) => ({ "--theme-text": v })
+  }
+];
+
 window.REX_WIDGET_CATALOG = {
   "server-node": {
     name: "服务器主机组件",

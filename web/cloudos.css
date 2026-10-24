@@ -1466,3 +1466,72 @@ body.edit-mode .widget-resize-corner { display: grid; }
 
 /* Dock 开启时为内容留出底部空间 */
 body.dock-on .desktop-shell { padding-bottom: 96px; }
+
+/* ===== 主题 Token 编辑器 ===== */
+.theme-token-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin-top: 18px;
+}
+
+.theme-group {
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.theme-group:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.theme-group-title {
+  margin-bottom: 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(206, 220, 240, 0.62);
+}
+
+.theme-range-value {
+  float: right;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.theme-toggle-field {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.theme-toggle-field label {
+  margin: 0;
+  font-size: 12.5px;
+  color: #eaf1fb;
+}
+.theme-toggle-field input {
+  width: auto;
+  margin: 0;
+}
+
+.theme-color-input {
+  height: 38px;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(8, 13, 26, 0.5);
+  cursor: pointer;
+}
+.theme-color-input::-webkit-color-swatch-wrapper { padding: 0; }
+.theme-color-input::-webkit-color-swatch { border: 0; border-radius: 7px; }
+
+.theme-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 22px;
+  padding-top: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+}

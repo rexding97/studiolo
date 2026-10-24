@@ -165,73 +165,13 @@
             <div class="theme-preset-grid" id="themePresetGrid"></div>
           </div>
 
-          <div class="form-grid" style="padding-top:10px;border-top:1px solid rgba(255,255,255,0.14)">
-            <div class="form-field">
-              <label>图标几何形状</label>
-              <select id="thIconShape">
-                <option value="squircle">iOS 超椭圆 (Squircle · 28%)</option>
-                <option value="circle">现代正圆形 (Circle · 50%)</option>
-                <option value="rounded">硬朗方圆角 (Rounded · 16%)</option>
-                <option value="sharp">极简微锐角 (Sharp · 8%)</option>
-              </select>
-            </div>
+          <div id="themeTokenGroups" class="theme-token-groups"></div>
 
-            <div class="form-field">
-              <label>图标底座材质</label>
-              <select id="thIconSurface">
-                <option value="gradient">炫彩品牌渐变底座</option>
-                <option value="frosted">统一冰川毛玻璃底座</option>
-                <option value="dark-matte">曜石暗夜哑光底座</option>
-                <option value="neon-ring">赛博发光霓虹环</option>
-              </select>
-            </div>
-
-            <div class="form-field form-full">
-              <label>网站原生 Logo 处理方式</label>
-              <select id="thLogoMode">
-                <option value="badge-pad">白瓷圆角衬垫</option>
-                <option value="bleed-cover">满幅出血填充</option>
-                <option value="raw-clean">纯净免衬底直出</option>
-                <option value="mono-white">智能纯白符号化</option>
-              </select>
-            </div>
-
-            <div class="form-field">
-              <label>卡片毛玻璃模糊度 (Blur px)</label>
-              <input type="range" id="thCardBlur" min="0" max="60" step="2" />
-            </div>
-
-            <div class="form-field">
-              <label>卡片表面不透明度</label>
-              <input type="range" id="thCardOpacity" min="0.04" max="0.65" step="0.02" />
-            </div>
-
-            <div class="form-field">
-              <label>卡片圆角曲率</label>
-              <input type="range" id="thCardRadius" min="8" max="42" step="2" />
-            </div>
-
-            <div class="form-field">
-              <label>高光边框强度</label>
-              <input type="range" id="thCardBorder" min="0.08" max="0.6" step="0.02" />
-            </div>
-
-            <div class="form-field">
-              <label>图标整体缩放</label>
-              <input type="range" id="thIconScale" min="0.82" max="1.15" step="0.02" />
-            </div>
-
-            <div class="form-field">
-              <label>全局强调色</label>
-              <input type="text" id="thAccentColor" placeholder="#38bdf8" />
-            </div>
-
-            <div class="form-field form-full">
-              <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;color:#fff;margin:0">
-                <input type="checkbox" id="thIconGloss" style="width:auto" checked />
-                ✨ 开启图标顶部弧面玻璃光泽
-              </label>
-            </div>
+          <div class="theme-actions">
+            <button type="button" class="glass-btn" id="exportThemeBtn">⬇ 导出主题</button>
+            <button type="button" class="glass-btn" id="importThemeBtn">⬆ 导入主题</button>
+            <input type="file" id="importThemeFile" accept=".yaml,.yml,.json" hidden />
+            <button type="button" class="glass-btn" id="resetThemeBtn" style="background:rgba(244,63,94,0.2)">恢复默认主题</button>
           </div>
         </section>
 

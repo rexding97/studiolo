@@ -1266,42 +1266,22 @@
    * 4. 可编程主题引擎 (Theme Studio)
    * ========================================================= */
   function applyTheme() {
-    const t =
-      (state.profile && state.profile.themeCustom) ||
-      window.REX_THEME_PRESETS["vision-glass"].config;
-
+    const defaults = window.REX_THEME_PRESETS["vision-glass"].config;
+    const values = Object.assign({}, defaults, state.profile.themeCustom || {});
     const root = document.documentElement;
-    const bgOp = Number(t.cardBgOpacity ?? 0.15);
-    const borderOp = Number(t.cardBorderOpacity ?? 0.28);
-    const shadowStr = Number(t.cardShadowStrength ?? 0.45);
 
-    root.style.setProperty(
-      "--theme-card-bg",
-      `linear-gradient(145deg, rgba(255, 255, 255, ${bgOp}) 0%, rgba(15, 23, 42, ${Math.min(0.85, bgOp * 1.2)}) 100%)`
-    );
-    root.style.setProperty("--theme-card-blur", `${Number(t.cardBlur ?? 24)}px`);
-    root.style.setProperty("--theme-card-radius", `${Number(t.cardRadius ?? 28)}px`);
-    root.style.setProperty("--theme-card-border", `rgba(255, 255, 255, ${borderOp})`);
-    root.style.setProperty(
-      "--theme-card-shadow",
-      `0 20px 42px -12px rgba(0, 0, 0, ${shadowStr}), inset 0 1.5px 1px 0 rgba(255, 255, 255, ${Math.min(0.6, borderOp * 1.3)})`
-    );
-    root.style.setProperty("--theme-accent", t.accentColor || "#38bdf8");
-    root.style.setProperty("--theme-text", t.textPrimary || "#ffffff");
-    root.style.setProperty("--theme-icon-scale", String(t.iconScale || 1));
-    root.style.setProperty("--theme-grid-gap", `${Number(t.gridGap ?? 18)}px`);
-
-    const shapeMap = {
-      squircle: "18px",
-      circle: "50%",
-      rounded: "11px",
-      sharp: "5px"
-    };
-    root.style.setProperty("--theme-icon-radius", shapeMap[t.iconShape] || "18px");
-
-    document.body.dataset.iconSurface = t.iconSurface || "gradient";
-    document.body.dataset.logoMode = t.logoMode || "badge-pad";
-    document.body.dataset.iconGloss = String(t.iconGloss !== false);
+    (window.REX_THEME_TOKENS || []).forEach((token) => {
+      const value = values[token.key] !== undefined ? values[token.key] : token.default;
+      if (token.dataset) {
+        document.body.dataset[token.dataset] = String(value);
+        return;
+      }
+      if (!token.apply) return;
+      const vars = token.apply(value, values) || {};
+      Object.entries(vars).forEach(([name, cssValue]) => {
+        root.style.setProperty(name, cssValue);
+      });
+    });
   }
 
   /* =========================================================
@@ -2227,78 +2207,241 @@
    * ========================================================= */
   function initThemeStudioModal() {
     const presetGrid = document.getElementById("themePresetGrid");
-    if (!presetGrid) return;
+    const groupsHost = document.getElementById("themeTokenGroups");
+    if (!presetGrid || !groupsHost) return;
 
-    function syncInputsFromCustom() {
-      const tc = state.profile.themeCustom || window.REX_THEME_PRESETS["vision-glass"].config;
-      document.getElementById("thCardOpacity").value = tc.cardBgOpacity ?? 0.14;
-      document.getElementById("thCardBlur").value = tc.cardBlur ?? 24;
-      document.getElementById("thCardRadius").value = tc.cardRadius ?? 28;
-      document.getElementById("thCardBorder").value = tc.cardBorderOpacity ?? 0.28;
-      document.getElementById("thAccentColor").value = tc.accentColor || "#38bdf8";
-      document.getElementById("thIconShape").value = tc.iconShape || "squircle";
-      document.getElementById("thIconSurface").value = tc.iconSurface || "gradient";
-      document.getElementById("thLogoMode").value = tc.logoMode || "badge-pad";
-      document.getElementById("thIconScale").value = tc.iconScale ?? 1.0;
-      document.getElementById("thIconGloss").checked = tc.iconGloss !== false;
+    const GROUP_LABELS = {
+      surface: "表面与材质",
+      icon: "图标与 Logo",
+      color: "颜色与文字"
+    };
+
+    function currentTokens() {
+      return Object.assign(
+        {},
+        window.REX_THEME_PRESETS["vision-glass"].config,
+        state.profile.themeCustom || {}
+      );
     }
 
     function renderPresetCards() {
       presetGrid.innerHTML = "";
-      Object.values(window.REX_THEME_PRESETS).forEach((p) => {
+      Object.values(window.REX_THEME_PRESETS).forEach((preset) => {
         const card = document.createElement("div");
-        card.className = `theme-preset-card ${state.profile.themePreset === p.id ? "active" : ""}`;
+        card.className = `theme-preset-card ${state.profile.themePreset === preset.id ? "active" : ""}`;
         card.innerHTML = `
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-            <strong style="font-size:13.5px">${escapeHtml(p.name)}</strong>
-            <span class="widget-tag">${escapeHtml(p.badge)}</span>
+            <strong style="font-size:13.5px">${escapeHtml(preset.name)}</strong>
+            <span class="widget-tag">${escapeHtml(preset.badge)}</span>
           </div>
-          <div style="font-size:11.5px;color:var(--text-secondary);line-height:1.4">${escapeHtml(p.desc)}</div>
+          <div style="font-size:11.5px;color:var(--text-secondary);line-height:1.4">${escapeHtml(preset.desc)}</div>
         `;
         card.addEventListener("click", () => {
-          state.profile.themePreset = p.id;
-          state.profile.themeCustom = JSON.parse(JSON.stringify(p.config));
+          state.profile.themePreset = preset.id;
+          state.profile.themeCustom = JSON.parse(JSON.stringify(preset.config));
           saveState();
           applyTheme();
-          syncInputsFromCustom();
           renderPresetCards();
+          renderTokenEditor();
         });
         presetGrid.appendChild(card);
       });
     }
 
-    function bindLiveControl(id, prop, isNum = false, isBool = false) {
-      const el = document.getElementById(id);
-      if (!el) return;
-      el.addEventListener("input", () => {
-        state.profile.themeCustom = state.profile.themeCustom || {};
-        state.profile.themeCustom[prop] = isBool
-          ? el.checked
-          : isNum
-          ? Number(el.value)
-          : el.value;
-        state.profile.themePreset = "custom";
-        saveState();
-        applyTheme();
-        renderPresetCards();
+    function buildControl(token, value) {
+      const field = document.createElement("div");
+      field.className = "form-field";
+
+      if (token.type === "toggle") {
+        field.classList.add("theme-toggle-field");
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.checked = value !== false;
+        input.addEventListener("change", () => updateToken(token, input.checked));
+        const label = document.createElement("label");
+        label.textContent = token.label;
+        field.appendChild(input);
+        field.appendChild(label);
+        return field;
+      }
+
+      const label = document.createElement("label");
+      label.textContent = token.label;
+
+      if (token.type === "range") {
+        const valueEl = document.createElement("span");
+        valueEl.className = "theme-range-value";
+        valueEl.textContent = value;
+        label.appendChild(valueEl);
+      }
+
+      field.appendChild(label);
+
+      let input;
+      if (token.type === "select") {
+        input = document.createElement("select");
+        token.options.forEach((opt) => {
+          const option = document.createElement("option");
+          option.value = opt.value;
+          option.textContent = opt.label;
+          input.appendChild(option);
+        });
+        input.value = value;
+      } else if (token.type === "color") {
+        input = document.createElement("input");
+        input.type = "color";
+        input.className = "theme-color-input";
+        input.value = value;
+      } else if (token.type === "range") {
+        input = document.createElement("input");
+        input.type = "range";
+        input.min = token.min;
+        input.max = token.max;
+        input.step = token.step;
+        input.value = value;
+        const valueEl = label.querySelector(".theme-range-value");
+        input.addEventListener("input", () => {
+          if (valueEl) valueEl.textContent = input.value;
+        });
+      } else {
+        input = document.createElement("input");
+        input.type = "text";
+        input.value = value;
+      }
+
+      const eventName = token.type === "select" || token.type === "color" ? "change" : "input";
+      input.addEventListener(eventName, () => {
+        updateToken(token, token.type === "range" ? Number(input.value) : input.value);
+      });
+      field.appendChild(input);
+      return field;
+    }
+
+    function updateToken(token, value) {
+      state.profile.themeCustom = Object.assign({}, currentTokens(), { [token.key]: value });
+      state.profile.themePreset = "custom";
+      saveState();
+      applyTheme();
+      renderPresetCards();
+    }
+
+    function renderTokenEditor() {
+      const values = currentTokens();
+      const groups = {};
+      (window.REX_THEME_TOKENS || []).forEach((token) => {
+        const group = token.group || "other";
+        if (!groups[group]) groups[group] = [];
+        groups[group].push(token);
+      });
+
+      groupsHost.innerHTML = "";
+      Object.keys(groups).forEach((group) => {
+        const section = document.createElement("section");
+        section.className = "theme-group";
+
+        const title = document.createElement("div");
+        title.className = "theme-group-title";
+        title.textContent = GROUP_LABELS[group] || group;
+        section.appendChild(title);
+
+        const grid = document.createElement("div");
+        grid.className = "form-grid";
+        groups[group].forEach((token) => {
+          grid.appendChild(buildControl(token, values[token.key] ?? token.default));
+        });
+        section.appendChild(grid);
+        groupsHost.appendChild(section);
       });
     }
 
-    bindLiveControl("thCardOpacity", "cardBgOpacity", true);
-    bindLiveControl("thCardBlur", "cardBlur", true);
-    bindLiveControl("thCardRadius", "cardRadius", true);
-    bindLiveControl("thCardBorder", "cardBorderOpacity", true);
-    bindLiveControl("thAccentColor", "accentColor", false);
-    bindLiveControl("thIconShape", "iconShape", false);
-    bindLiveControl("thIconSurface", "iconSurface", false);
-    bindLiveControl("thLogoMode", "logoMode", false);
-    bindLiveControl("thIconScale", "iconScale", true);
-    bindLiveControl("thIconGloss", "iconGloss", false, true);
+    function themeToYaml(tokens) {
+      const lines = ["# Studiolo 主题", "id: custom", 'name: "我的主题"', "tokens:"];
+      (window.REX_THEME_TOKENS || []).forEach((token) => {
+        if (tokens[token.key] === undefined) return;
+        lines.push(`  ${token.key}: ${JSON.stringify(tokens[token.key])}`);
+      });
+      return lines.join("\n") + "\n";
+    }
+
+    function parseTheme(text) {
+      const trimmed = text.trim();
+      if (trimmed.startsWith("{")) {
+        const data = JSON.parse(trimmed);
+        return data.tokens || data;
+      }
+      const tokens = {};
+      let inTokens = false;
+      text.split(/\r?\n/).forEach((raw) => {
+        const line = raw.replace(/\s+$/, "");
+        if (!line.trim() || line.trim().startsWith("#")) return;
+        if (/^tokens\s*:/.test(line)) {
+          inTokens = true;
+          return;
+        }
+        if (!inTokens) return;
+        const match = line.match(/^\s+([A-Za-z0-9_]+)\s*:\s*(.*)$/);
+        if (match) tokens[match[1]] = parseScalar(match[2]);
+      });
+      return tokens;
+    }
+
+    function applyThemeTokens(tokens) {
+      const known = {};
+      (window.REX_THEME_TOKENS || []).forEach((token) => {
+        if (tokens[token.key] !== undefined) known[token.key] = tokens[token.key];
+      });
+      if (!Object.keys(known).length) throw new Error("没有可识别的主题参数");
+
+      state.profile.themeCustom = Object.assign({}, currentTokens(), known);
+      state.profile.themePreset = "custom";
+      saveState();
+      applyTheme();
+      renderPresetCards();
+      renderTokenEditor();
+    }
 
     window.openThemeStudio = function () {
       renderPresetCards();
-      syncInputsFromCustom();
+      renderTokenEditor();
     };
+
+    document.getElementById("exportThemeBtn").addEventListener("click", () => {
+      const content = themeToYaml(currentTokens());
+      const blob = new Blob([content], { type: "text/yaml;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "studiolo-theme.yaml";
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+
+    const importFile = document.getElementById("importThemeFile");
+    document.getElementById("importThemeBtn").addEventListener("click", () => importFile.click());
+    importFile.addEventListener("change", (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          applyThemeTokens(parseTheme(String(reader.result)));
+        } catch (err) {
+          alert("导入主题失败：" + err.message);
+        }
+        importFile.value = "";
+      };
+      reader.readAsText(file);
+    });
+
+    document.getElementById("resetThemeBtn").addEventListener("click", () => {
+      const preset = window.REX_THEME_PRESETS["vision-glass"];
+      state.profile.themePreset = preset.id;
+      state.profile.themeCustom = JSON.parse(JSON.stringify(preset.config));
+      saveState();
+      applyTheme();
+      renderPresetCards();
+      renderTokenEditor();
+    });
   }
 
   /* =========================================================

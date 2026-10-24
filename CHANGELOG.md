@@ -1,5 +1,28 @@
 # Changelog
 
+## v0.1.2 — 2026-10-24
+
+### 新增
+
+- 仓库内 Homebrew formula，支持 `brew services` 托管
+- 数据目录固定在 `$(brew --prefix)/var/studiolo`
+
+### 变更
+
+- 后端启动描述统一为 Studiolo Hub
+
+## v0.1.1 — 2026-10-24
+
+### 新增
+
+- `Dockerfile`、`docker-compose.yml`、首次启动密码初始化
+- `CHANGELOG.md`、`CONTRIBUTING.md`
+- README 增加环境变量与 HTTP API 参考
+
+### 变更
+
+- 容器内可通过 `PSUTIL_PROCFS_PATH` 采集宿主机指标
+
 ## v0.1.0 — 2026-10-24
 
 首个公开预览版。

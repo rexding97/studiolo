@@ -1,0 +1,12 @@
+.git
+.github
+private
+server/data
+__pycache__
+*.pyc
+*.pyo
+.DS_Store
+*.log
+.env
+.env.*
+!.env.example

@@ -50,6 +50,10 @@ def _tcp_ping(host, port, timeout=3.0):
 def collect_local():
     import psutil
 
+    procs = os.environ.get("PSUTIL_PROCFS_PATH")
+    if procs:
+        psutil.PROCFS_PATH = procs
+
     psutil.cpu_percent(interval=None)  # prime
     time.sleep(0.2)
     cpu = psutil.cpu_percent(interval=None)

@@ -59,6 +59,24 @@ python3 rexhub.py --port 3002
 <key>KeepAlive</key><true/>
 ```
 
+### Docker
+
+```bash
+cp .env.example .env
+# 编辑 .env，至少设置 REXHUB_INIT_PASSWORD
+
+docker compose up -d --build
+```
+
+打开 `http://127.0.0.1:3002`。
+
+- 数据保存在 `./server/data`，首次启动会按 `.env` 里的密码初始化，已有用户不会被覆盖
+- 国内构建可在 `.env` 里设置 `PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple`
+- 远程主机指标：把 SSH 密钥挂进容器，并在主机组件里填写 `sshUser` / `sshPort`
+- 想采集宿主机而不是容器指标：启用 compose 里的 `pid: host`、挂载 `/proc:/host/proc:ro`，并设置 `PSUTIL_PROCFS_PATH=/host/proc`
+
+镜像基于 `python:3.12-slim`，容器内以非 root 用户运行，健康检查请求 `/api/v1/health`。
+
 ## 默认配置
 
 `web/default-state.yaml` 是一份可直接导入的示例：

@@ -1,0 +1,31 @@
+services:
+  studiolo:
+    build:
+      context: .
+      args:
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+    image: studiolo:latest
+    container_name: studiolo
+    restart: unless-stopped
+    ports:
+      - "${REXHUB_PORT:-3002}:3002"
+    environment:
+      REXHUB_INIT_PASSWORD: ${REXHUB_INIT_PASSWORD:-}
+      REXHUB_USER: ${REXHUB_USER:-admin}
+      REXHUB_PORT: "3002"
+      TZ: ${TZ:-Asia/Shanghai}
+    volumes:
+      - ./server/data:/app/server/data
+      # 远程主机指标：挂载 SSH 密钥（容器内 uid 10001 需可读）
+      # - ${HOME}/.ssh:/home/studiolo/.ssh:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:3002/api/v1/health', timeout=4)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    # 采集宿主机 /proc（可选）：
+    # pid: host
+    # volumes 追加: - /proc:/host/proc:ro
+    # environment 追加: PSUTIL_PROCFS_PATH: /host/proc

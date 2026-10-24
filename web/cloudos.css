@@ -1324,8 +1324,10 @@ body.edit-mode .widget-resize-corner { display: grid; }
 
 /* ===== 统一设置面板 ===== */
 .settings-panel {
-  max-width: 780px;
+  width: min(780px, 92vw);
+  height: min(760px, 86vh);
   max-height: 86vh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -1377,6 +1379,7 @@ body.edit-mode .widget-resize-corner { display: grid; }
 }
 
 .settings-body {
+  flex: 1 1 auto;
   overflow-y: auto;
   padding-right: 6px;
   min-height: 0;

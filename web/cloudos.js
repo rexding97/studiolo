@@ -3075,6 +3075,8 @@
       panels.forEach((panel) => {
         panel.hidden = panel.dataset.settingsPanel !== name;
       });
+      const body = backdrop.querySelector(".settings-body");
+      if (body) body.scrollTop = 0;
       if (name === "theme" && window.openThemeStudio) window.openThemeStudio();
     }
 

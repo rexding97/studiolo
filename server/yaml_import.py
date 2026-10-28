@@ -90,12 +90,30 @@ def _parse_yaml(text):
                 continue
             field = re.match(r"^\s+([A-Za-z0-9_]+)\s*:\s*(.*)$", line)
             if field and current is not None:
-                current[field.group(1)] = _scalar(field.group(2))
+                key = field.group(1)
+                value = _scalar(field.group(2))
+                if key == "mobileJson":
+                    try:
+                        current["mobile"] = json.loads(value)
+                    except (TypeError, json.JSONDecodeError):
+                        raise ImportError(f"第 {line_number} 行 mobileJson 损坏") from None
+                    if not isinstance(current["mobile"], dict):
+                        raise ImportError(f"第 {line_number} 行 mobileJson 必须是对象")
+                else:
+                    current[key] = value
                 continue
         root_field = re.match(r"^([A-Za-z0-9_]+)\s*:\s*(.*)$", line)
         if root_field:
             key, raw_value = root_field.group(1), root_field.group(2)
-            if key in ("plugins", "workspaces"):
+            if key in ("pluginsJson", "workspacesJson"):
+                target = key[:-4]
+                try:
+                    state[target] = json.loads(_scalar(raw_value))
+                except (ImportError, TypeError, json.JSONDecodeError):
+                    raise ImportError(f"第 {line_number} 行 {key} 损坏") from None
+                if not isinstance(state[target], list):
+                    raise ImportError(f"第 {line_number} 行 {key} 必须是数组")
+            elif key in ("plugins", "workspaces"):
                 try:
                     state[key] = json.loads(raw_value) if raw_value else {}
                 except json.JSONDecodeError:

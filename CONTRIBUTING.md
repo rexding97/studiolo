@@ -6,6 +6,9 @@
 - 后端使用 Python 标准库与 psutil；新增依赖需要说明理由并同步容器、Formula 和文档
 - 不提交 `server/data/`、`private/`、`.env`、备份或凭据
 - 新接口先实现再写命令示例；目标架构与当前实现必须明确区分
+- 保持 `workspaces` / `activeWorkspaceId` 与顶层活动 `layout` / `apps` 镜像一致
+- 用户插件保持纯数据；数组字段使用 JSON 数组，不引入用户 JavaScript 执行入口
+- CalDAV 凭据只放服务端环境变量，不写入 state、YAML、测试夹具或日志
 - 保持默认回环地址绑定，测试不依赖真实外网、私钥或私人服务
 
 ## 本地开发
@@ -47,7 +50,7 @@ docker build -t studiolo:test .
 
 `read -d` 示例需要 Bash。所有跟踪的 JavaScript 文件都应通过 `node --check`，不能只检查入口文件。修改容器后，还要在本地启动测试容器并请求 `/api/v1/health`、`/api/v1/ready` 和首页，确认进程以 uid `10001` 运行。涉及初始化/readiness 的改动必须额外验证“未初始化不就绪”，且不要把存活响应当成就绪证明。
 
-CI 在 PR 和 main 上执行相同类别的检查。不得用跳过失败、屏蔽错误或访问真实外部服务来让测试变绿。
+CI 在 PR 和 main 上执行相同类别的检查。`node --check` 只证明语法有效；当前没有浏览器自动化，工作区切换、拖放、插件配置和版本中心需要按 RELEASING 的人工清单验证。不得用跳过失败、屏蔽错误或访问真实外部服务来让测试变绿。
 
 ## 提交
 

@@ -253,6 +253,36 @@
       return Boolean(pending);
     }
 
+    function getGeneration() {
+      return generation;
+    }
+
+    function acceptRemote(nextRevision, expectedGeneration) {
+      revision = Number(nextRevision) >= 0 ? Number(nextRevision) : revision;
+      if (pending && expectedGeneration !== undefined && pending.generation === expectedGeneration) {
+        pending = null;
+      }
+      retryAttempt = 0;
+      if (pending) {
+        persist();
+        status("saving", "继续同步较新修改");
+        if (authenticated && !flight) {
+          if (pushTimer) clearTimeout(pushTimer);
+          pushTimer = setTimeout(() => {
+            pushTimer = null;
+            flush();
+          }, 0);
+        }
+      } else {
+        if (pushTimer) clearTimeout(pushTimer);
+        pushTimer = null;
+        clearRetry();
+        persist();
+        status("ok", "已同步");
+      }
+      return { rev: revision, keptPending: Boolean(pending) };
+    }
+
     function destroy() {
       destroyed = true;
       if (pushTimer) clearTimeout(pushTimer);
@@ -276,6 +306,8 @@
       canPull,
       getRevision,
       hasPending,
+      getGeneration,
+      acceptRemote,
       destroy
     };
   }

@@ -42,7 +42,7 @@ test "$(docker top studiolo-test -o pid,user,args | awk 'NR > 1 && $3 == "python
 docker rm -f studiolo-test
 ```
 
-使用 `/api/v1/ready` 验证就绪，并单独启动未初始化实例确认该端点返回非 2xx；`/api/v1/health` 用于存活与诊断，不能代替就绪检查。
+使用 `/api/v1/ready` 验证就绪；初始化、数据库或采集器任一检查失败时必须返回非 2xx，不就绪分支由 unittest 覆盖。`/api/v1/health` 用于存活与诊断，不能代替就绪检查。
 
 如果修改了基础镜像，查询并记录可验证的多架构 digest；网络不可用时可保留明确 patch tag，但必须在发布说明中承认尚未做到 digest 固定，不能填写未经验证的值。
 
@@ -134,12 +134,16 @@ docker top studiolo -o pid,user,args   # rexhub.py 应为 uid 10001
 curl -fsSL -o /dev/null -w "%{http_code}\n" https://rexding97.github.io/studiolo/
 ```
 
-浏览器确认：
+在浏览器中人工确认（当前 CI 不包含浏览器自动化）：
 
-- 顶栏同步状态正常
-- 主机指标、天气、应用在线状态有数据
+- 顶栏同步状态正常，默认服务仍位于 `127.0.0.1:3002`
+- 主机指标、最近 60 点趋势、天气、应用在线状态有数据，SSH 按钮复制正确命令
 - 设置的五个页签均可用：桌面、主题、自定义、壁纸、数据
 - 拖拽、文件夹、Dock 正常
+- 工作区新建、切换、重命名、复制、删除后，活动布局与应用镜像保持一致
+- 五种声明式插件可配置；links / images 使用 JSON 数组，iframe 沙箱与 URL 拒绝规则有效
+- 版本中心能刷新快照、查看差异/预览并恢复，冲突得到明确提示
+- ICS 与已配置的只读 CalDAV 来源返回事件；凭据由部署环境重新注入，不出现在 YAML、页面或日志中
 
 ## 7. 安全复查
 

@@ -9,7 +9,7 @@
     "weather",
     "calendar",
     "notes",
-    "clock"
+    "clock-metric"
   ]);
   const DECLARATIVE_TYPES = Object.freeze(["text", "links", "image", "countdown", "iframe"]);
   const IFRAME_SANDBOX = "allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox";
@@ -177,8 +177,10 @@
       mem: field("string", "内存", "40%", { maxLength: 32 }),
       disk: field("string", "磁盘", "--", { maxLength: 32 }),
       uptime: field("string", "运行时间", "10d", { maxLength: 64 }),
-      sortBy: field("select", "应用排序", "order", { options: ["order", "clicks"] })
-    }),
+      sortBy: field("select", "应用排序", "order", { options: ["order", "clicks"] }),
+      sshUser: field("string", "SSH 用户名", "root", { maxLength: 64 }),
+      sshPort: field("number", "SSH 端口", 22, { min: 1, max: 65535 })
+    }, "server-metrics"),
     metadata("app-folder", "应用文件夹", "归纳一组网站或应用", "folder", 4, 2, {
       title: field("string", "组件标题", "精选收藏夹", { maxLength: 80 }),
       badge: field("string", "状态徽章", "书签集合", { maxLength: 80 }),
@@ -192,17 +194,19 @@
       condition: field("string", "天气状况", "晴间多云", { maxLength: 80 }),
       range: field("string", "温度范围", "最高 24° · 最低 15°", { maxLength: 80 }),
       humidity: field("string", "湿度", "60%", { maxLength: 32 })
-    }),
-    metadata("calendar", "月历日程", "展示当月日历与今日日期", "calendar", 3, 2, {
+    }, "weather"),
+    metadata("calendar", "月历日程", "展示公历与真实 ICS / CalDAV 事件", "calendar", 3, 2, {
       title: field("string", "组件标题", "月历日程", { maxLength: 80 }),
-      badge: field("string", "状态徽章", "自动同步", { maxLength: 80 })
-    }),
+      badge: field("string", "状态徽章", "本机日历", { maxLength: 80 }),
+      icsUrl: field("url", "ICS URL（与 CalDAV 二选一）", "", { required: false }),
+      caldavUrl: field("url", "CalDAV URL（凭据仅在服务端 env 配置）", "", { required: false })
+    }, "calendar"),
     metadata("notes", "随手便签", "持久化保存备忘录文本", "notes", 3, 2, {
       title: field("string", "组件标题", "随手便签", { maxLength: 80 }),
       badge: field("string", "状态徽章", "自动保存", { maxLength: 80 }),
       text: field("textarea", "便签内容", "", { maxLength: 20000 })
     }),
-    metadata("clock", "数字时钟", "展示本地时间与状态信息", "clock", 3, 1, {
+    metadata("clock-metric", "数字时钟", "展示本地时间与状态信息", "clock", 3, 1, {
       title: field("string", "组件标题", "数字时钟", { maxLength: 80 }),
       badge: field("string", "状态徽章", "本地时间", { maxLength: 80 }),
       subtitle: field("string", "副标题", "自动更新", { maxLength: 200 })
@@ -801,6 +805,7 @@
       render: definition.runtime === "declarative" ? renderRegisteredDeclarative : renderAdapterPlaceholder
     }));
   });
+  registry.register(Object.assign({}, registry.get("clock-metric"), { type: "clock" }));
 
   function getDefaultConfig(type) {
     const plugin = registry.get(type);
@@ -946,11 +951,13 @@
     });
 
     test("六种内置元数据和五种声明式类型可用", function () {
+      const runtimeByType = { "server-node": "server-metrics", weather: "weather", calendar: "calendar" };
       BUILT_IN_TYPES.forEach((type) => {
         const plugin = registry.get(type);
         assert(plugin && plugin.configSchema && plugin.defaultConfig, `${type} 元数据缺失`);
-        assert(plugin.runtime === "cloudos-adapter", `${type} runtime 错误`);
+        assert(plugin.runtime === (runtimeByType[type] || "cloudos-adapter"), `${type} runtime 错误`);
       });
+      assert(registry.has("clock") && registry.get("clock").type === "clock", "clock 兼容别名缺失");
       DECLARATIVE_TYPES.forEach((type) => assert(registry.has(type), `${type} 未注册`));
     });
 

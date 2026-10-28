@@ -78,6 +78,61 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual({"future": True}, extended["plugins"])
         self.assertEqual("retained", extended["custom"])
 
+    def test_frontend_yaml_aliases_survive_import_and_snapshot_restore(self):
+        def scalar(value):
+            return json.dumps(value, ensure_ascii=False)
+
+        plugins = [{"id": "calendar", "enabled": True, "settings": {"view": "month"}}]
+        mobile = {"x": 2, "y": 5, "w": 3, "h": 4}
+        workspaces = [
+            {"id": "workspace-one", "name": "主桌面", "layout": [], "apps": []},
+            {"id": "workspace-two", "name": "实验室", "layout": [
+                {"id": "mobile-widget", "kind": "widget", "widgetType": "notes",
+                 "x": 1, "y": 1, "w": 4, "h": 2, "mobile": mobile, "config": {"text": "保留"}}
+            ], "apps": [{"id": "internal", "name": "Internal", "href": "http://127.0.0.1:8080"}]},
+        ]
+        lines = [
+            "# Studiolo 桌面 2D 坐标与主题配置文件", 'version: "5.0"', "profile:",
+            '  title: "Studio"', '  activeWorkspaceId: "workspace-two"', "layout:",
+            '  - id: "weather"', '    kind: "widget"', "    x: 1", "    y: 1", "    w: 4", "    h: 2",
+            f"    mobileJson: {scalar(json.dumps(mobile, separators=(',', ':')))}",
+            '    widgetType: "weather"',
+            f"    configJson: {scalar(json.dumps({'city': '上海'}, separators=(',', ':')))}",
+            "apps: []",
+            f"pluginsJson: {scalar(json.dumps(plugins, ensure_ascii=False, separators=(',', ':')))}",
+            f"workspacesJson: {scalar(json.dumps(workspaces, ensure_ascii=False, separators=(',', ':')))}",
+        ]
+        state = yaml_import.parse("\n".join(lines) + "\n")
+        self.assertEqual(plugins, state["plugins"])
+        self.assertEqual(workspaces, state["workspaces"])
+        self.assertEqual("workspace-two", state["profile"]["activeWorkspaceId"])
+        self.assertEqual(mobile, state["layout"][0]["mobile"])
+        self.assertNotIn("mobileJson", state["layout"][0])
+        imported, conflict = db.import_state(state, expected_rev=0)
+        self.assertIsNone(conflict)
+        db.put_state(empty_state(), imported["rev"])
+        restored, conflict = db.restore_state(imported["rev"], expected_rev=imported["rev"] + 1)
+        self.assertIsNone(conflict)
+        self.assertEqual(state, restored and db.get_state()["state"])
+        native = yaml_import.parse(json.dumps(state, ensure_ascii=False))
+        self.assertEqual(state, native)
+
+    def test_json_aliases_fail_clearly_when_corrupt_or_wrong_type(self):
+        for alias in ("pluginsJson", "workspacesJson"):
+            for value, message in (('"{broken"', "损坏"), ('"{}"', "必须是数组")):
+                with self.subTest(alias=alias, value=value):
+                    with self.assertRaises(yaml_import.ImportError) as caught:
+                        yaml_import.parse(f"layout: []\napps: []\n{alias}: {value}\n")
+                    self.assertIn(alias, str(caught.exception))
+                    self.assertIn(message, str(caught.exception))
+        layout = "layout:\n  - id: item\n    x: 0\n    y: 0\n    w: 1\n    h: 1\n"
+        for value, message in (('"{broken"', "损坏"), ('"[]"', "必须是对象")):
+            with self.subTest(mobileJson=value):
+                with self.assertRaises(yaml_import.ImportError) as caught:
+                    yaml_import.parse(layout + f"    mobileJson: {value}\napps: []\n")
+                self.assertIn("mobileJson", str(caught.exception))
+                self.assertIn(message, str(caught.exception))
+
     def test_force_import_and_restore_are_idempotent_and_restore_clicks(self):
         result, _ = db.import_state(app_state(), expected_rev=0)
         self.assertEqual(2, db.click_counts()["a"]["count"])

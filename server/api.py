@@ -56,12 +56,21 @@ def _validated(fn, *args):
         raise ApiError(400, str(exc)) from None
 
 
-def request_user(handler):
-    raw = handler.headers.get("Cookie", "")
-    for part in raw.split(";"):
+def _session_cookies(handler):
+    cookies = {}
+    for part in handler.headers.get("Cookie", "").split(";"):
         name, _, value = part.strip().partition("=")
-        if name == "rex_sid":
-            return db.check_session(value)
+        if name in ("__Host-rex_sid", "rex_sid"):
+            cookies[name] = value
+    return cookies
+
+
+def request_user(handler):
+    cookies = _session_cookies(handler)
+    for name in ("__Host-rex_sid", "rex_sid"):
+        user = db.check_session(cookies.get(name))
+        if user:
+            return user
     return None
 
 
@@ -76,9 +85,11 @@ def _secure_cookie():
     return os.environ.get("REXHUB_SECURE_COOKIE", "").lower() in ("1", "true", "yes", "on")
 
 
-def _cookie(token, max_age):
-    secure = "; Secure" if _secure_cookie() else ""
-    return f"rex_sid={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}{secure}"
+def _cookie(token, max_age, name=None):
+    secure = _secure_cookie()
+    name = name or ("__Host-rex_sid" if secure else "rex_sid")
+    secure_attribute = "; Secure" if secure or name == "__Host-rex_sid" else ""
+    return f"{name}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}{secure_attribute}"
 
 
 def _trusted_proxies():
@@ -142,12 +153,10 @@ def login(handler, body, query):
 
 
 def logout(handler, body, query):
-    raw = handler.headers.get("Cookie", "")
-    for part in raw.split(";"):
-        name, _, value = part.strip().partition("=")
-        if name == "rex_sid":
-            db.delete_session(value)
-    handler.extra_header("Set-Cookie", _cookie("", 0))
+    for token in _session_cookies(handler).values():
+        db.delete_session(token)
+    handler.extra_header("Set-Cookie", _cookie("", 0, "__Host-rex_sid"))
+    handler.extra_header("Set-Cookie", _cookie("", 0, "rex_sid"))
     return 200, {"ok": True}
 
 

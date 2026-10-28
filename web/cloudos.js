@@ -41,6 +41,9 @@
   let logoCacheGeneration = 0;
   // 正在运行的 FLIP 动画句柄缓存：flipKey -> Animation
   const activeFlipAnimations = new Map();
+  const hostTrendCache = new Map();
+  const calendarEventCache = new Map();
+  let remoteWidgetSignature = "";
 
   let state = loadState();
   normalizeLayoutCoordinates(state.layout);
@@ -80,11 +83,21 @@
   function loadState() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return migrateProfile(cloneDefault());
+      if (!raw) return migrateProfile(StudioloCore.normalizeState(cloneDefault(), { repair: true }));
       return migrateProfile(StudioloCore.normalizeState(JSON.parse(raw), { repair: true }));
     } catch (_) {
-      return migrateProfile(cloneDefault());
+      return migrateProfile(StudioloCore.normalizeState(cloneDefault(), { repair: true }));
     }
+  }
+
+  function syncActiveWorkspace(target) {
+    if (!target || !Array.isArray(target.workspaces) || !target.workspaces.length) return target;
+    const activeId = target.profile.activeWorkspaceId || target.workspaces[0].id;
+    const active = target.workspaces.find((workspace) => workspace.id === activeId) || target.workspaces[0];
+    target.profile.activeWorkspaceId = active.id;
+    active.layout = target.layout;
+    active.apps = target.apps;
+    return target;
   }
 
   function recordHistory() {
@@ -98,6 +111,7 @@
 
   function saveState(options) {
     const opts = options || {};
+    syncActiveWorkspace(state);
     if (opts.history !== false && !applyingRemote) recordHistory();
     else lastHistoryState = StudioloCore.clone(state);
     if (localSaveTimer) clearTimeout(localSaveTimer);
@@ -111,6 +125,7 @@
   function writeLocalState() {
     if (localSaveTimer) clearTimeout(localSaveTimer);
     localSaveTimer = null;
+    syncActiveWorkspace(state);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch (_) {}
@@ -544,14 +559,22 @@
         const memEl = shell.querySelector("[data-host-mem]");
         const diskEl = shell.querySelector("[data-host-disk]");
         const roleEl = shell.querySelector("[data-host-role]");
-        if (pingEl && typeof metric.pingMs === "number") {
-          pingEl.textContent = `${ip} · ${Math.round(metric.pingMs)}ms`;
-        }
+        if (pingEl && typeof metric.pingMs === "number") pingEl.textContent = `${ip} · ${Math.round(metric.pingMs)}ms`;
         if (cpuEl && typeof metric.cpu === "number") cpuEl.textContent = `${metric.cpu.toFixed(1)}%`;
         if (memEl && typeof metric.mem === "number") memEl.textContent = `${metric.mem.toFixed(1)}%`;
         if (diskEl && typeof metric.disk === "number") diskEl.textContent = `${metric.disk.toFixed(1)}%`;
         if (roleEl && metric.error) roleEl.textContent = `连接失败 · ${metric.error}`;
+        const timestamp = Date.parse(metric.ts || "");
+        const age = Number.isFinite(timestamp) ? Math.max(0, Date.now() - timestamp) : Infinity;
+        const stale = Boolean(metric.error) || age > 120000;
+        const sampleEl = shell.querySelector("[data-host-sample]");
+        if (sampleEl) {
+          const time = Number.isFinite(timestamp) ? new Date(timestamp).toLocaleTimeString("zh-CN", { hour12: false }) : "未知时间";
+          sampleEl.textContent = metric.error ? `离线 · ${metric.error}` : stale ? `陈旧采样 · ${time}` : `最近采样 · ${time}`;
+        }
         shell.classList.toggle("host-offline", Boolean(metric.error));
+        shell.classList.toggle("host-stale", stale);
+        loadHostTrend(shell.dataset.hostId);
       });
     }
 
@@ -600,7 +623,9 @@
       });
 
       (state.layout || []).forEach((item) => {
-        if (item.kind !== "widget" || item.widgetType !== "server-node") return;
+        if (item.kind !== "widget") return;
+        const definition = StudioloWidgets.get(item.widgetType);
+        if (!definition || definition.runtime !== "server-metrics") return;
         const metric = (data.hosts || {})[String(item.id).replace(/^host-/, "")];
         if (!metric) return;
         const cfg = item.config || (item.config = {});
@@ -613,6 +638,10 @@
       });
 
       updateHostCards(data.hosts);
+      (state.layout || []).forEach((item) => {
+        const definition = item.kind === "widget" && StudioloWidgets.get(item.widgetType);
+        if (definition && definition.runtime === "calendar") loadCalendarEvents(item);
+      });
       updateProbeDots(data.probes);
       if (weatherChanged) {
         document.querySelectorAll("[data-weather-city]").forEach((shell) => {
@@ -656,9 +685,9 @@
       });
       return {
         hosts: {
-          mac: { cpu: wobble(12, 6), mem: wobble(38, 2), disk: 61.5, uptime: 1036800, pingMs: 1 },
-          office: { cpu: wobble(23, 10), mem: wobble(58, 2), disk: 42.0, uptime: 3196800, pingMs: 4 },
-          fnas: { cpu: wobble(4, 3), mem: wobble(22, 1), disk: 55.3, uptime: 2764800, pingMs: 3 },
+          mac: { cpu: wobble(12, 6), mem: wobble(38, 2), disk: 61.5, uptime: 1036800, pingMs: 1, ts: new Date().toISOString() },
+          office: { cpu: wobble(23, 10), mem: wobble(58, 2), disk: 42.0, uptime: 3196800, pingMs: 4, ts: new Date().toISOString() },
+          fnas: { cpu: wobble(4, 3), mem: wobble(22, 1), disk: 55.3, uptime: 2764800, pingMs: 3, ts: new Date().toISOString() },
         },
         probes,
         weather: {
@@ -741,7 +770,19 @@
       if (!document.hidden && authed) refreshRuntime();
     });
 
-    return { init, schedulePush, recordClick, pullState };
+    return {
+      init,
+      schedulePush,
+      recordClick,
+      pullState,
+      flush: sync.flush,
+      hasPending: sync.hasPending,
+      getRevision: sync.getRevision,
+      getGeneration: sync.getGeneration,
+      acceptRemote: sync.acceptRemote,
+      isReady: () => authed && !DEMO_MODE,
+      request
+    };
   })();
 
   /* =========================================================
@@ -2254,6 +2295,97 @@
     shellEl.appendChild(corner);
   }
 
+  function createTrendSvg(points, key, color) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 120 28");
+    svg.setAttribute("class", "host-trend-line");
+    svg.setAttribute("aria-hidden", "true");
+    const values = points.map((point) => Number(point[key])).filter(Number.isFinite).slice(-60);
+    if (values.length > 1) {
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      const d = values.map((value, index) => {
+        const x = index * 120 / (values.length - 1);
+        const y = 26 - Math.max(0, Math.min(100, value)) * 0.24;
+        return `${index ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`;
+      }).join(" ");
+      path.setAttribute("d", d);
+      path.setAttribute("fill", "none");
+      path.setAttribute("stroke", color);
+      path.setAttribute("stroke-width", "1.8");
+      svg.appendChild(path);
+    }
+    return svg;
+  }
+
+  function paintHostTrend(shell, hostId) {
+    const host = shell || document.querySelector(`[data-host-id="${hostId}"]`);
+    const container = host && host.querySelector("[data-host-trend]");
+    if (!container) return;
+    const id = hostId || host.dataset.hostId;
+    const entry = hostTrendCache.get(id);
+    container.innerHTML = "";
+    const status = document.createElement("span");
+    status.className = "host-trend-status";
+    if (!entry) {
+      status.textContent = "正在读取最近 60 点趋势…";
+      container.appendChild(status);
+      return;
+    }
+    const points = (entry.points || []).slice(-60);
+    status.textContent = entry.error ? `趋势不可用 · ${entry.error}` : `最近 ${points.length} 点采样`;
+    container.appendChild(status);
+    [["cpu", "CPU", "#38bdf8"], ["mem", "MEM", "#a78bfa"], ["disk", "DISK", "#34d399"]].forEach(([key, label, color]) => {
+      const row = document.createElement("div");
+      row.className = "host-trend-row";
+      const text = document.createElement("span");
+      text.textContent = label;
+      row.append(text, createTrendSvg(points, key, color));
+      container.appendChild(row);
+    });
+  }
+
+  function demoHostTrend(hostId) {
+    if (!hostTrendCache.has(hostId)) {
+      const offset = Array.from(hostId).reduce((sum, char) => sum + char.charCodeAt(0), 0);
+      const points = Array.from({ length: 60 }, (_, index) => ({
+        ts: new Date(Date.now() - (59 - index) * 60000).toISOString(),
+        cpu: 25 + Math.sin(index / 7 + offset) * 18 + index % 5,
+        mem: 45 + Math.sin(index / 11 + offset) * 12,
+        disk: 58 + Math.sin(index / 19 + offset) * 4
+      }));
+      hostTrendCache.set(hostId, { points, updatedAt: Date.now(), demo: true });
+    }
+    paintHostTrend(null, hostId);
+  }
+
+  async function loadHostTrend(hostId) {
+    if (DEMO_MODE) return demoHostTrend(hostId);
+    if (!Remote.isReady()) return;
+    const previous = hostTrendCache.get(hostId) || {};
+    if (previous.loading || (previous.updatedAt && Date.now() - previous.updatedAt < 60000)) return;
+    hostTrendCache.set(hostId, Object.assign({}, previous, { loading: true }));
+    const { res, body } = await Remote.request(`/api/v1/metrics?host=${encodeURIComponent(hostId)}`);
+    const valid = res.ok && body && Array.isArray(body.points);
+    hostTrendCache.set(hostId, {
+      points: valid ? body.points.slice(-60) : (previous.points || []),
+      updatedAt: valid ? Date.now() : undefined,
+      error: valid ? null : `HTTP ${res.status || 0}`
+    });
+    paintHostTrend(null, hostId);
+  }
+
+  async function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) return navigator.clipboard.writeText(text);
+    const input = document.createElement("textarea");
+    input.value = text;
+    input.style.position = "fixed";
+    input.style.opacity = "0";
+    document.body.appendChild(input);
+    input.select();
+    document.execCommand("copy");
+    input.remove();
+  }
+
   function computeSlotGridSpec(w, h) {
     const cols = Math.max(2, Math.min(8, w >= 5 ? w - 1 : w === 4 ? 3 : 2));
     const rows = Math.max(1, h);
@@ -2313,6 +2445,22 @@
       e.stopPropagation();
       window.openWidgetConfigModal(widgetItem.id);
     });
+    if (isServer) {
+      const copyButton = document.createElement("button");
+      copyButton.type = "button";
+      copyButton.className = "tiny-btn";
+      copyButton.textContent = "SSH";
+      copyButton.title = "复制 SSH 命令";
+      copyButton.addEventListener("click", async (event) => {
+        event.stopPropagation();
+        if (!cfg.ip) return alert("请先配置服务器 IP。");
+        const command = `ssh -p ${Number(cfg.sshPort) || 22} ${cfg.sshUser || "root"}@${cfg.ip}`;
+        await copyText(command);
+        copyButton.textContent = "已复制";
+        setTimeout(() => { copyButton.textContent = "SSH"; }, 1500);
+      });
+      top.querySelector(".widget-actions").prepend(copyButton);
+    }
 
     shell.appendChild(top);
 
@@ -2365,10 +2513,28 @@
       `;
     }
     shell.appendChild(foot);
+    if (isServer) {
+      const sample = document.createElement("div");
+      sample.className = "host-sample";
+      sample.dataset.hostSample = "";
+      sample.textContent = "暂无最近采样";
+      shell.appendChild(sample);
+      const details = document.createElement("details");
+      details.className = "host-trends";
+      const summary = document.createElement("summary");
+      summary.textContent = "最近趋势（60 点）";
+      const trend = document.createElement("div");
+      trend.dataset.hostTrend = "";
+      details.append(summary, trend);
+      details.addEventListener("toggle", () => paintHostTrend(shell, shell.dataset.hostId));
+      shell.appendChild(details);
+      paintHostTrend(shell, shell.dataset.hostId);
+      loadHostTrend(shell.dataset.hostId);
+    }
 
     shell.addEventListener("click", (e) => {
       if (editMode) return;
-      if (e.target.closest("a.app-unit") || e.target.closest("button")) return;
+      if (e.target.closest("a.app-unit") || e.target.closest("button") || e.target.closest("details")) return;
       openFolderModal(widgetItem.id);
     });
 
@@ -2408,7 +2574,8 @@
 
   function findWeatherConfig(city) {
     for (const item of state.layout || []) {
-      if (item.widgetType === "weather" && ((item.config || {}).city === city)) return item.config;
+      const definition = item.kind === "widget" && StudioloWidgets.get(item.widgetType);
+      if (definition && definition.runtime === "weather" && ((item.config || {}).city === city)) return item.config;
     }
     return null;
   }
@@ -2488,6 +2655,93 @@
     return shell;
   }
 
+  function calendarSourceUrl(item) {
+    const config = item.config || {};
+    return config.icsUrl || config.caldavUrl || "";
+  }
+
+  function paintCalendarEvents(shell, item) {
+    const container = shell.querySelector("[data-calendar-events]");
+    if (!container) return;
+    const hasSource = Boolean(calendarSourceUrl(item));
+    container.hidden = !hasSource;
+    if (!hasSource) return;
+    const entry = calendarEventCache.get(item.id) || { loading: true };
+    container.innerHTML = "";
+    const status = document.createElement("div");
+    status.className = "calendar-sync-status";
+    const events = entry.data && Array.isArray(entry.data.events) ? entry.data.events : [];
+    if (entry.loading) status.textContent = "正在同步日程…";
+    else if (entry.error && !events.length) status.textContent = `同步失败 · ${entry.error}`;
+    else {
+      const data = entry.data || {};
+      const source = (data.sources || [])[0] || {};
+      const updated = source.updatedAt || data.serverTime;
+      status.textContent = `${entry.error || data.stale ? "陈旧日程" : "日程已同步"}${updated ? ` · ${new Date(updated).toLocaleString("zh-CN", { hour12: false })}` : ""}${entry.error ? ` · ${entry.error}` : ""}`;
+    }
+    container.appendChild(status);
+    const now = Date.now();
+    events.filter((event) => {
+      const time = Date.parse(event.end || event.start || "");
+      return !Number.isFinite(time) || time >= now - 86400000;
+    }).slice(0, 4).forEach((event) => {
+      const row = document.createElement("div");
+      row.className = "calendar-event";
+      const title = document.createElement("span");
+      title.textContent = event.summary || "（无标题日程）";
+      const time = document.createElement("time");
+      const start = event.start ? new Date(event.start) : null;
+      time.textContent = event.allDay ? `${start ? start.toLocaleDateString("zh-CN") : "近日"} · 全天` : start ? start.toLocaleString("zh-CN", { hour12: false, month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "时间待定";
+      if (start) time.dateTime = start.toISOString();
+      row.append(title, time);
+      container.appendChild(row);
+    });
+    if (!events.length && !entry.loading) {
+      const empty = document.createElement("div");
+      empty.className = "calendar-event-empty";
+      empty.textContent = "暂无即将开始的事件";
+      container.appendChild(empty);
+    }
+  }
+
+  async function loadCalendarEvents(item) {
+    if (!calendarSourceUrl(item)) return;
+    if (DEMO_MODE) {
+      if (!calendarEventCache.has(item.id)) {
+        calendarEventCache.set(item.id, {
+          data: {
+            events: [
+              { summary: "本地示例 · 产品同步", start: new Date(Date.now() + 3600000).toISOString(), allDay: false },
+              { summary: "本地示例 · 全天日程", start: new Date(Date.now() + 86400000).toISOString().slice(0, 10), allDay: true }
+            ],
+            sources: [{ updatedAt: new Date().toISOString() }],
+            stale: false
+          }
+        });
+      }
+      const shell = document.querySelector(`[data-item-id="${item.id}"]`);
+      if (shell) paintCalendarEvents(shell, item);
+      return;
+    }
+    if (!Remote.isReady()) return;
+    const previous = calendarEventCache.get(item.id) || {};
+    if (previous.loading || (previous.updatedAt && Date.now() - previous.updatedAt < 60000)) return;
+    calendarEventCache.set(item.id, Object.assign({}, previous, { loading: true }));
+    const { res, body } = await Remote.request(`/api/v1/calendar/events?id=${encodeURIComponent(item.id)}`);
+    const valid = res.ok && body;
+    const sourceError = body && Array.isArray(body.sources)
+      ? body.sources.map((source) => source.error).filter(Boolean).join("；")
+      : "";
+    const apiError = valid && body.status !== "ok" ? (sourceError || "日程源同步失败") : null;
+    calendarEventCache.set(item.id, {
+      data: valid ? body : previous.data,
+      updatedAt: valid ? Date.now() : undefined,
+      error: valid ? apiError : `HTTP ${res.status || 0}`
+    });
+    const shell = document.querySelector(`[data-item-id="${item.id}"]`);
+    if (shell) paintCalendarEvents(shell, item);
+  }
+
   function renderCalendarWidget(widgetItem) {
     const cfg = widgetItem.config || {};
     const w = widgetItem.w || 3;
@@ -2530,12 +2784,18 @@
     grid.className = "cal-grid";
     grid.innerHTML = cells;
     shell.appendChild(grid);
+    const events = document.createElement("div");
+    events.className = "calendar-events";
+    events.dataset.calendarEvents = "";
+    events.hidden = !calendarSourceUrl(widgetItem);
+    shell.appendChild(events);
+    paintCalendarEvents(shell, widgetItem);
 
     const foot = document.createElement("div");
     foot.className = "widget-foot-metrics";
     foot.innerHTML = `<span>本机日历</span><span>${m + 1}月 · 共 ${totalDays} 天</span>`;
     shell.appendChild(foot);
-
+    loadCalendarEvents(widgetItem);
     attachLayoutDragEvents(shell, widgetItem);
     return shell;
   }
@@ -2652,11 +2912,89 @@
     }
   }
 
+  function registerCloudWidgetAdapters() {
+    const adapters = {
+      "server-node": renderAppContainerWidget,
+      "app-folder": renderAppContainerWidget,
+      weather: renderWeatherWidget,
+      calendar: renderCalendarWidget,
+      notes: renderNotesWidget,
+      "clock-metric": renderClockMetricWidget
+    };
+    Object.entries(adapters).forEach(([type, renderer]) => {
+      const definition = StudioloWidgets.get(type);
+      StudioloWidgets.register(Object.assign({}, definition, {
+        render: (ctx) => renderer(ctx.item)
+      }), { replace: true });
+    });
+    const clockAlias = StudioloWidgets.get("clock");
+    StudioloWidgets.register(Object.assign({}, clockAlias, {
+      render: (ctx) => renderClockMetricWidget(ctx.item)
+    }), { replace: true });
+  }
+
+  function getPluginDefinition(pluginId) {
+    return (state.plugins || []).find((plugin) => plugin.id === pluginId) || null;
+  }
+
+  function renderRegisteredWidget(item) {
+    if (item.widgetType === "plugin") {
+      const definition = getPluginDefinition(item.config && item.config.pluginId);
+      if (!definition) return null;
+      const shell = StudioloWidgets.renderDeclarative(definition, {
+        item,
+        save: saveState,
+        rerender: scheduleRenderWithFlip
+      });
+      buildWidgetEditControls(shell, item);
+      attachLayoutDragEvents(shell, item);
+      return shell;
+    }
+    if (!StudioloWidgets.has(item.widgetType)) return null;
+    return StudioloWidgets.render(item.widgetType, {
+      item,
+      config: item.config || {},
+      save: saveState,
+      rerender: scheduleRenderWithFlip
+    });
+  }
+
+  function configuredWidgetSignature(target) {
+    return JSON.stringify([
+      target.profile.activeWorkspaceId,
+      (target.layout || []).map((item) => {
+        const definition = item.kind === "widget" && StudioloWidgets.get(item.widgetType);
+        if (!definition || !["server-metrics", "calendar"].includes(definition.runtime)) return null;
+        return [item.id, definition.runtime, calendarSourceUrl(item)];
+      }).filter(Boolean)
+    ]);
+  }
+
+  function refreshConfiguredWidgets() {
+    if (!Remote.isReady()) return;
+    (state.layout || []).forEach((item) => {
+      const definition = item.kind === "widget" && StudioloWidgets.get(item.widgetType);
+      if (!definition) return;
+      if (definition.runtime === "server-metrics") loadHostTrend(String(item.id).replace(/^host-/, ""));
+      if (definition.runtime === "calendar") loadCalendarEvents(item);
+    });
+  }
+
+  function refreshConfiguredWidgetsIfChanged() {
+    const signature = configuredWidgetSignature(state);
+    if (signature === remoteWidgetSignature) return;
+    remoteWidgetSignature = signature;
+    hostTrendCache.clear();
+    calendarEventCache.clear();
+    refreshConfiguredWidgets();
+  }
+
   /* =========================================================
    * 10. 桌面主工作区渲染 (精简 DOM 树，移除 48 个冗余占位节点)
    * ========================================================= */
   function renderWorkspace() {
     applyProfileChrome();
+    renderWorkspaceSwitcher();
     const ws = document.getElementById("workspace");
     const dock = document.getElementById("stageDock");
     if (!ws) return;
@@ -2674,27 +3012,15 @@
 
     state.layout.forEach((item) => {
       let el = null;
-      if (item.kind === "app") {
-        el = renderBareAppItem(item);
-      } else if (item.kind === "widget") {
-        if (item.widgetType === "server-node" || item.widgetType === "app-folder") {
-          el = renderAppContainerWidget(item);
-        } else if (item.widgetType === "weather") {
-          el = renderWeatherWidget(item);
-        } else if (item.widgetType === "calendar") {
-          el = renderCalendarWidget(item);
-        } else if (item.widgetType === "notes") {
-          el = renderNotesWidget(item);
-        } else if (item.widgetType === "clock-metric") {
-          el = renderClockMetricWidget(item);
-        }
-      }
+      if (item.kind === "app") el = renderBareAppItem(item);
+      else if (item.kind === "widget") el = renderRegisteredWidget(item);
       if (el) grid.appendChild(el);
     });
 
     ws.appendChild(grid);
     renderDock(dock);
     updateClock();
+    refreshConfiguredWidgetsIfChanged();
   }
 
   function renderDock(dock) {
@@ -3045,6 +3371,100 @@
     });
   }
 
+  function widgetEditorContext(item) {
+    if (item.widgetType === "plugin") {
+      const definition = getPluginDefinition(item.config && item.config.pluginId);
+      if (!definition) throw new Error("插件定义不存在");
+      return { definition, blueprint: StudioloWidgets.get(definition.type), values: definition.config };
+    }
+    return { definition: null, blueprint: StudioloWidgets.get(item.widgetType), values: item.config || {} };
+  }
+
+  function toLocalDateTimeInput(value) {
+    const date = new Date(value);
+    if (!Number.isFinite(date.getTime())) return "";
+    const pad = (number) => String(number).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  function renderSchemaFields(schema, values, container) {
+    container.innerHTML = "";
+    Object.entries(schema || {}).forEach(([key, field]) => {
+      if (key === "title" || key === "badge") return;
+      const value = values[key] !== undefined ? values[key] : field.default;
+      const wrapper = document.createElement("div");
+      wrapper.className = `form-field ${["textarea", "array"].includes(field.type) ? "form-full" : ""}`;
+      const label = document.createElement("label");
+      label.textContent = field.label || key;
+      let control;
+      if (field.type === "boolean") {
+        control = document.createElement("input");
+        control.type = "checkbox";
+        control.checked = value !== false;
+      } else if (field.type === "select") {
+        control = document.createElement("select");
+        (field.options || []).forEach((option) => {
+          const element = document.createElement("option");
+          element.value = String(option);
+          element.textContent = String(option);
+          control.appendChild(element);
+        });
+        control.value = String(value);
+      } else if (field.type === "textarea" || field.type === "array") {
+        control = document.createElement("textarea");
+        control.value = field.type === "array" ? JSON.stringify(value || [], null, 2) : String(value || "");
+        if (field.type === "array") control.placeholder = "JSON 数组";
+      } else {
+        control = document.createElement("input");
+        control.type = field.type === "number" ? "number" : field.type === "datetime" ? "datetime-local" : "text";
+        control.value = field.type === "datetime" && value ? toLocalDateTimeInput(value) : (value === undefined ? "" : String(value));
+        if (field.min !== undefined) control.min = String(field.min);
+        if (field.max !== undefined) control.max = String(field.max);
+      }
+      control.dataset.schemaKey = key;
+      control.dataset.schemaType = field.type;
+      control.required = field.required === true;
+      label.htmlFor = control.id = `schema-${editingWidgetId}-${key}`;
+      wrapper.append(label, control);
+      container.appendChild(wrapper);
+    });
+    if (container.children.length && container.closest("#wcfgDynamicFields")) {
+      const note = document.createElement("div");
+      note.className = "settings-note form-full";
+      note.textContent = "URL 仅限 http(s)。CalDAV 凭据只在服务端环境变量配置，不会进入前端状态或 YAML。";
+      container.appendChild(note);
+    }
+  }
+
+  function readSchemaFields(schema, container) {
+    const result = {};
+    container.querySelectorAll("[data-schema-key]").forEach((control) => {
+      const key = control.dataset.schemaKey;
+      const field = schema[key];
+      const type = control.dataset.schemaType;
+      let value;
+      if (type === "boolean") value = control.checked;
+      else if (type === "array") {
+        try { value = JSON.parse(control.value || "[]"); }
+        catch (_) { throw new Error(`${field.label} 不是有效 JSON`); }
+        if (!Array.isArray(value)) throw new Error(`${field.label} 必须是数组`);
+      } else if (type === "number") {
+        value = Number(control.value);
+        if (!Number.isFinite(value) || (field.min !== undefined && value < field.min) || (field.max !== undefined && value > field.max)) {
+          throw new Error(`${field.label} 超出有效范围`);
+        }
+      } else {
+        value = control.value.trim();
+        if (type === "url" && value) value = StudioloCore.assertUrl(value, field.label, true);
+        if (type === "datetime" && value) value = new Date(value).toISOString();
+      }
+      if (field.required && (value === "" || value === undefined)) throw new Error(`${field.label} 不能为空`);
+      if (typeof value === "string" && field.maxLength && value.length > field.maxLength) throw new Error(`${field.label} 过长`);
+      result[key] = value;
+    });
+    return result;
+  }
+
   /* =========================================================
    * 13. 组件配置器弹窗 & 新增组件商店
    * ========================================================= */
@@ -3056,103 +3476,14 @@
       const item = state.layout.find((x) => x.id === widgetId && x.kind === "widget");
       if (!item) return;
       editingWidgetId = widgetId;
-      const cfg = item.config || {};
-      const blueprint = window.REX_WIDGET_CATALOG[item.widgetType] || {};
-
-      document.getElementById("wcfgModalTitle").textContent = `配置组件 · ${blueprint.name || item.widgetType}`;
-      document.getElementById("wcfgTitleInput").value = cfg.title || "";
-      document.getElementById("wcfgBadgeInput").value = cfg.badge || "";
-      document.getElementById("wcfgWidthSelect").value = String(item.w || 4);
-      document.getElementById("wcfgHeightSelect").value = String(item.h || 2);
-
-      const dynamicBox = document.getElementById("wcfgDynamicFields");
-      if (item.widgetType === "server-node") {
-        dynamicBox.innerHTML = `
-          <div class="form-field">
-            <label>组网 / 公网 IP</label>
-            <input type="text" id="wcfgIp" value="${escapeHtml(cfg.ip || "")}" />
-          </div>
-          <div class="form-field">
-            <label>局域网 LAN IP</label>
-            <input type="text" id="wcfgLanIp" value="${escapeHtml(cfg.lanIp || "")}" />
-          </div>
-          <div class="form-field form-full">
-            <label>主机角色说明</label>
-            <input type="text" id="wcfgRole" value="${escapeHtml(cfg.role || "")}" />
-          </div>
-          <div class="form-field">
-            <label>SSH 用户名</label>
-            <input type="text" id="wcfgSshUser" value="${escapeHtml(cfg.sshUser || "root")}" placeholder="root" />
-          </div>
-          <div class="form-field">
-            <label>SSH 端口</label>
-            <input type="text" id="wcfgSshPort" value="${escapeHtml(cfg.sshPort || "22")}" placeholder="22" />
-          </div>
-          <div class="form-field">
-            <label>CPU / 内存显示</label>
-            <div style="display:flex;gap:8px">
-              <input type="text" id="wcfgCpu" value="${escapeHtml(cfg.cpu || "15%")}" placeholder="CPU" />
-              <input type="text" id="wcfgMem" value="${escapeHtml(cfg.mem || "40%")}" placeholder="MEM" />
-            </div>
-          </div>
-          <div class="form-field">
-            <label>图标默认排序策略</label>
-            <select id="wcfgSortBy">
-              <option value="order" ${cfg.sortBy !== "clicks" ? "selected" : ""}>⇅ 按默认顺序展示前几项</option>
-              <option value="clicks" ${cfg.sortBy === "clicks" ? "selected" : ""}>🔥 按近 7 天热度排序</option>
-            </select>
-          </div>
-        `;
-      } else if (item.widgetType === "app-folder") {
-        dynamicBox.innerHTML = `
-          <div class="form-field form-full">
-            <label>文件夹底部副标题描述</label>
-            <input type="text" id="wcfgSubtitle" value="${escapeHtml(cfg.subtitle || "")}" />
-          </div>
-          <div class="form-field form-full">
-            <label>图标默认排序策略</label>
-            <select id="wcfgSortBy">
-              <option value="order" ${cfg.sortBy !== "clicks" ? "selected" : ""}>⇅ 按默认顺序展示前几项</option>
-              <option value="clicks" ${cfg.sortBy === "clicks" ? "selected" : ""}>🔥 按近 7 天热度排序</option>
-            </select>
-          </div>
-        `;
-      } else if (item.widgetType === "weather") {
-        dynamicBox.innerHTML = `
-          <div class="form-field">
-            <label>城市 / 地区名称</label>
-            <input type="text" id="wcfgCity" value="${escapeHtml(cfg.city || "南京 · 鼓楼")}" />
-          </div>
-          <div class="form-field">
-            <label>当前温度</label>
-            <input type="text" id="wcfgTemp" value="${escapeHtml(cfg.temp || "21°")}" />
-          </div>
-          <div class="form-field">
-            <label>天气状况</label>
-            <input type="text" id="wcfgCond" value="${escapeHtml(cfg.condition || "晴间多云")}" />
-          </div>
-          <div class="form-field">
-            <label>最高 / 最低温</label>
-            <input type="text" id="wcfgRange" value="${escapeHtml(cfg.range || "最高 24° · 最低 15°")}" />
-          </div>
-        `;
-      } else if (item.widgetType === "notes") {
-        dynamicBox.innerHTML = `
-          <div class="form-field form-full">
-            <label>便签内容</label>
-            <textarea id="wcfgNoteText" style="min-height:110px">${escapeHtml(cfg.text || "")}</textarea>
-          </div>
-        `;
-      } else {
-        dynamicBox.innerHTML = `
-          <div class="form-field form-full">
-            <label>附加说明文字</label>
-            <input type="text" id="wcfgSubtitle" value="${escapeHtml(cfg.subtitle || "")}" />
-          </div>
-        `;
-      }
-
-      associateFormLabels(dynamicBox);
+      const editor = widgetEditorContext(item);
+      const blueprint = editor.blueprint;
+      document.getElementById("wcfgModalTitle").textContent = `配置组件 · ${(editor.definition && editor.definition.name) || blueprint.name || item.widgetType}`;
+      document.getElementById("wcfgTitleInput").value = editor.definition ? editor.definition.name : (item.config && item.config.title) || "";
+      document.getElementById("wcfgBadgeInput").value = editor.definition ? "" : (item.config && item.config.badge) || "";
+      document.getElementById("wcfgWidthSelect").value = String(item.w || blueprint.defaultSize.w);
+      document.getElementById("wcfgHeightSelect").value = String(item.h || blueprint.defaultSize.h);
+      renderSchemaFields(blueprint.configSchema, editor.values, document.getElementById("wcfgDynamicFields"));
       openModal(cfgBackdrop, { initialFocus: document.getElementById("wcfgTitleInput") });
     };
 
@@ -3164,37 +3495,26 @@
     document.getElementById("saveWcfgBtn").addEventListener("click", () => {
       const item = state.layout.find((x) => x.id === editingWidgetId);
       if (!item) return;
-      item.config = item.config || {};
-      item.config.title = document.getElementById("wcfgTitleInput").value.trim() || "未命名组件";
-      item.config.badge = document.getElementById("wcfgBadgeInput").value.trim();
-
-      const getVal = (id) => {
-        const el = document.getElementById(id);
-        return el ? el.value.trim() : undefined;
-      };
-
-      if (item.widgetType === "server-node") {
-        item.config.ip = getVal("wcfgIp");
-        item.config.lanIp = getVal("wcfgLanIp");
-        item.config.role = getVal("wcfgRole");
-        item.config.sshUser = getVal("wcfgSshUser") || "root";
-        const sshPort = parseInt(getVal("wcfgSshPort") || "22", 10);
-        item.config.sshPort = Number.isFinite(sshPort) && sshPort > 0 && sshPort < 65536 ? sshPort : 22;
-        item.config.cpu = getVal("wcfgCpu");
-        item.config.mem = getVal("wcfgMem");
-        item.config.sortBy = getVal("wcfgSortBy") || "order";
-      } else if (item.widgetType === "app-folder") {
-        item.config.subtitle = getVal("wcfgSubtitle");
-        item.config.sortBy = getVal("wcfgSortBy") || "order";
-      } else if (item.widgetType === "weather") {
-        item.config.city = getVal("wcfgCity");
-        item.config.temp = getVal("wcfgTemp");
-        item.config.condition = getVal("wcfgCond");
-        item.config.range = getVal("wcfgRange");
-      } else if (item.widgetType === "notes") {
-        item.config.text = getVal("wcfgNoteText");
-      } else {
-        item.config.subtitle = getVal("wcfgSubtitle");
+      try {
+        const editor = widgetEditorContext(item);
+        const values = readSchemaFields(editor.blueprint.configSchema, document.getElementById("wcfgDynamicFields"));
+        const title = document.getElementById("wcfgTitleInput").value.trim() || "未命名组件";
+        if (editor.definition) {
+          state.plugins = StudioloWidgets.normalizeDefinitions((state.plugins || []).map((definition) =>
+            definition.id === editor.definition.id ? Object.assign({}, definition, { name: title, config: values }) : definition
+          ));
+        } else {
+          item.config = item.config || {};
+          item.config.title = title;
+          item.config.badge = document.getElementById("wcfgBadgeInput").value.trim();
+          Object.assign(item.config, values);
+          if (item.widgetType === "calendar" && item.config.icsUrl && item.config.caldavUrl) {
+            throw new Error("ICS 与 CalDAV 只能选择一种来源");
+          }
+        }
+      } catch (error) {
+        alert(`保存组件失败：${error.message}`);
+        return;
       }
 
       const currentRect = getLayoutRect(item);
@@ -3252,35 +3572,54 @@
     });
 
     const catalogGrid = document.getElementById("widgetCatalogGrid");
-    Object.entries(window.REX_WIDGET_CATALOG).forEach(([typeKey, meta]) => {
+    const catalogTypes = StudioloWidgets.builtInTypes.concat(StudioloWidgets.declarativeTypes);
+    catalogTypes.map((type) => StudioloWidgets.get(type)).forEach((meta) => {
+      const typeKey = meta.type;
       const card = document.createElement("div");
       card.className = "catalog-card";
       card.innerHTML = `
         <div>
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
             <strong style="font-size:14.5px">${escapeHtml(meta.name)}</strong>
-            <span class="widget-tag">${escapeHtml(meta.badge)} (${meta.defaultW}×${meta.defaultH})</span>
+            <span class="widget-tag">${escapeHtml(typeKey)} (${meta.defaultSize.w}×${meta.defaultSize.h})</span>
           </div>
-          <div style="font-size:12px;color:var(--text-secondary);line-height:1.45">${escapeHtml(meta.desc)}</div>
+          <div style="font-size:12px;color:var(--text-secondary);line-height:1.45">${escapeHtml(meta.description)}</div>
         </div>
         <button type="button" class="glass-btn" style="align-self:flex-start;padding:6px 14px;font-size:12px">+ 添加此组件到桌面</button>
       `;
       card.querySelector("button").addEventListener("click", () => {
-        const newId = `${typeKey}-${Date.now()}`;
-        const spot = findFirstFreeSpot(state.layout, meta.defaultW, meta.defaultH, null, 1, false) || { x: 1, y: 1 };
-        const mobileW = Math.min(MOBILE_GRID_COLS, meta.defaultW);
-        const mobileSpot = findFirstFreeSpot(state.layout, mobileW, meta.defaultH, null, 1, true) || { x: 1, y: 1 };
+        const newId = `widget-${typeKey}-${Date.now()}`;
+        const defaultSize = meta.defaultSize;
+        const spot = findFirstFreeSpot(state.layout, defaultSize.w, defaultSize.h, null, 1, false) || { x: 1, y: 1 };
+        const mobileW = Math.min(MOBILE_GRID_COLS, defaultSize.w);
+        const mobileSpot = findFirstFreeSpot(state.layout, mobileW, defaultSize.h, null, 1, true) || { x: 1, y: 1 };
+        const declarative = StudioloWidgets.declarativeTypes.includes(typeKey);
+        const pluginId = declarative ? `plugin-${typeKey}-${Date.now()}` : null;
         const newWidget = {
           id: newId,
           kind: "widget",
-          widgetType: typeKey,
+          widgetType: declarative ? "plugin" : typeKey,
           x: spot.x,
           y: spot.y,
-          w: meta.defaultW,
-          h: meta.defaultH,
-          mobile: { x: mobileSpot.x, y: mobileSpot.y, w: mobileW, h: meta.defaultH },
-          config: JSON.parse(JSON.stringify(meta.defaultConfig))
+          w: defaultSize.w,
+          h: defaultSize.h,
+          mobile: { x: mobileSpot.x, y: mobileSpot.y, w: mobileW, h: defaultSize.h },
+          config: declarative ? { pluginId } : StudioloCore.clone(meta.defaultConfig)
         };
+        if (declarative) {
+          const initialConfig = StudioloWidgets.getDefaultConfig(typeKey);
+          if (typeKey === "text") initialConfig.content = "# 新文本组件";
+          if (typeKey === "image") initialConfig.images = [{ url: "https://placehold.co/600x400", alt: "示例图片" }];
+          if (typeKey === "countdown") initialConfig.target = new Date(Date.now() + 7 * 86400000).toISOString();
+          if (typeKey === "iframe") initialConfig.url = "https://example.com";
+          state.plugins.push(StudioloWidgets.normalizeDefinition({
+            id: pluginId,
+            type: typeKey,
+            name: meta.name.trim(),
+            defaultSize,
+            config: initialConfig
+          }));
+        }
         state.layout.push(newWidget);
         saveState();
         renderWithFlip();
@@ -3767,6 +4106,197 @@
     });
   }
 
+  function versionDiffSummary(snapshotState) {
+    const currentWorkspaces = state.workspaces || [];
+    const snapshotWorkspaces = snapshotState.workspaces || [{ layout: snapshotState.layout || [], apps: snapshotState.apps || [] }];
+    const count = (items, key) => items.reduce((total, item) => total + ((item[key] || []).length), 0);
+    const lines = [
+      `工作区：${currentWorkspaces.length} → ${snapshotWorkspaces.length}`,
+      `布局项：${count(currentWorkspaces, "layout")} → ${count(snapshotWorkspaces, "layout")}`,
+      `应用：${count(currentWorkspaces, "apps")} → ${count(snapshotWorkspaces, "apps")}`,
+      `插件：${(state.plugins || []).length} → ${(snapshotState.plugins || []).length}`,
+      `活动工作区：${state.profile.activeWorkspaceId} → ${(snapshotState.profile || {}).activeWorkspaceId || "默认"}`
+    ];
+    if (state.profile.themePreset !== (snapshotState.profile || {}).themePreset) {
+      lines.push(`主题：${state.profile.themePreset || "自定义"} → ${(snapshotState.profile || {}).themePreset || "自定义"}`);
+    }
+    return lines.join("\n");
+  }
+
+  function initVersionCenter() {
+    const list = document.getElementById("versionList");
+    const status = document.getElementById("versionStatus");
+    const preview = document.getElementById("versionPreview");
+    const diff = document.getElementById("versionDiff");
+    const restoreButton = document.getElementById("restoreVersionBtn");
+    let selected = null;
+
+    async function loadVersions() {
+      selected = null;
+      restoreButton.disabled = true;
+      preview.textContent = "";
+      list.innerHTML = "";
+      if (DEMO_MODE) {
+        status.textContent = "示例模式不提供远端版本中心。";
+        diff.textContent = "版本快照在自托管后端可用。";
+        return;
+      }
+      status.textContent = "正在读取版本…";
+      const { res, body } = await Remote.request("/api/v1/state/snapshots?limit=30");
+      if (!res.ok || !body || !Array.isArray(body.snapshots)) {
+        status.textContent = res.status === 401 ? "登录后可查看版本。" : "版本列表暂时不可用。";
+        return;
+      }
+      status.textContent = body.snapshots.length ? `共 ${body.snapshots.length} 个最近版本` : "暂无远端快照";
+      body.snapshots.forEach((snapshot) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "version-item";
+        button.textContent = `rev ${snapshot.rev} · ${snapshot.createdAt || "未知时间"}`;
+        button.addEventListener("click", async () => {
+          status.textContent = `正在读取 rev ${snapshot.rev}…`;
+          const result = await Remote.request(`/api/v1/state/snapshots/${snapshot.rev}`);
+          if (!result.res.ok || !result.body || !result.body.state) {
+            status.textContent = "快照读取失败。";
+            return;
+          }
+          selected = result.body;
+          preview.textContent = JSON.stringify(selected.state, null, 2).slice(0, 30000);
+          diff.textContent = versionDiffSummary(selected.state);
+          restoreButton.disabled = false;
+          status.textContent = `已选择 rev ${snapshot.rev}，确认前可检查预览和差异。`;
+          list.querySelectorAll(".version-item").forEach((item) => item.classList.toggle("active", item === button));
+        });
+        list.appendChild(button);
+      });
+    }
+
+    document.getElementById("refreshVersionsBtn").addEventListener("click", loadVersions);
+    restoreButton.addEventListener("click", async () => {
+      if (!selected || !window.confirm(`确认恢复 rev ${selected.rev} 吗？远端当前版本不会被强制覆盖。`)) return;
+      restoreButton.disabled = true;
+      status.textContent = "正在同步本地修改并检查版本…";
+      await Remote.flush();
+      if (Remote.hasPending()) {
+        status.textContent = "本地修改尚未同步或存在冲突，未执行恢复。";
+        restoreButton.disabled = false;
+        return;
+      }
+      const restoring = selected;
+      const expectedRev = Remote.getRevision();
+      const expectedGeneration = Remote.getGeneration();
+      const { res, body } = await Remote.request(`/api/v1/state/snapshots/${restoring.rev}/restore`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expectedRev, force: false })
+      });
+      if (res.status === 409) {
+        status.textContent = `恢复冲突：远端已更新到 rev ${body && body.rev}，未覆盖任何状态。请刷新后重选。`;
+      } else if (res.ok && body) {
+        const accepted = Remote.acceptRemote(body.rev, expectedGeneration);
+        if (!accepted.keptPending) {
+          replaceState(restoring.state, { remote: false, clearHistory: true });
+        }
+        status.textContent = accepted.keptPending
+          ? `远端已恢复 rev ${restoring.rev}，较新本地修改正在继续同步。`
+          : `已恢复 rev ${restoring.rev}，新版本为 rev ${body.rev}。`;
+        selected = null;
+        preview.textContent = "";
+        diff.textContent = "恢复完成。";
+        await loadVersions();
+      } else {
+        status.textContent = (body && body.error) || `恢复失败（HTTP ${res.status}）。`;
+      }
+      restoreButton.disabled = !selected;
+    });
+  }
+
+  function renderWorkspaceSwitcher() {
+    const select = document.getElementById("workspaceSelect");
+    if (!select) return;
+    const signature = JSON.stringify((state.workspaces || []).map((workspace) => [workspace.id, workspace.name]));
+    if (select.dataset.signature !== signature) {
+      select.innerHTML = "";
+      state.workspaces.forEach((workspace) => {
+        const option = document.createElement("option");
+        option.value = workspace.id;
+        option.textContent = workspace.name;
+        select.appendChild(option);
+      });
+      select.dataset.signature = signature;
+    }
+    select.value = state.profile.activeWorkspaceId;
+    const active = state.workspaces.find((workspace) => workspace.id === state.profile.activeWorkspaceId);
+    const summary = document.getElementById("workspaceSummary");
+    if (summary && active) summary.textContent = `${active.name} · ${active.layout.length} 个布局项 · ${active.apps.length} 个应用，共 ${state.workspaces.length} 个工作区`;
+    const deleteButton = document.getElementById("deleteWorkspaceBtn");
+    if (deleteButton) deleteButton.disabled = state.workspaces.length <= 1;
+  }
+
+  function switchWorkspace(workspaceId) {
+    if (workspaceId === state.profile.activeWorkspaceId || !state.workspaces.some((workspace) => workspace.id === workspaceId)) return;
+    commitState((draft) => {
+      syncActiveWorkspace(draft);
+      const target = draft.workspaces.find((workspace) => workspace.id === workspaceId);
+      draft.profile.activeWorkspaceId = workspaceId;
+      draft.layout = StudioloCore.clone(target.layout);
+      draft.apps = StudioloCore.clone(target.apps);
+    });
+  }
+
+  function initWorkspaceControls() {
+    document.getElementById("workspaceSelect").addEventListener("change", (event) => switchWorkspace(event.target.value));
+    document.getElementById("newWorkspaceBtn").addEventListener("click", () => {
+      const name = window.prompt("新工作区名称", `工作区 ${state.workspaces.length + 1}`);
+      if (!name || !name.trim()) return;
+      const id = `workspace-${Date.now()}`;
+      commitState((draft) => {
+        syncActiveWorkspace(draft);
+        draft.workspaces.push({ id, name: name.trim(), layout: [], apps: [] });
+        draft.profile.activeWorkspaceId = id;
+        draft.layout = [];
+        draft.apps = [];
+      });
+    });
+    document.getElementById("renameWorkspaceBtn").addEventListener("click", () => {
+      const active = state.workspaces.find((workspace) => workspace.id === state.profile.activeWorkspaceId);
+      const name = window.prompt("工作区名称", active.name);
+      if (!name || !name.trim()) return;
+      commitState((draft) => {
+        const target = draft.workspaces.find((workspace) => workspace.id === draft.profile.activeWorkspaceId);
+        target.name = name.trim();
+      });
+    });
+    document.getElementById("copyWorkspaceLayoutBtn").addEventListener("click", () => {
+      const choices = state.workspaces.filter((workspace) => workspace.id !== state.profile.activeWorkspaceId);
+      if (!choices.length) return alert("请先新建另一个工作区。");
+      const targetId = window.prompt(`将当前布局和应用复制到哪个工作区 ID？${choices.map((workspace) => workspace.id).join("、")}`, choices[0].id);
+      if (!targetId || !choices.some((workspace) => workspace.id === targetId)) return;
+      if (!window.confirm("目标工作区的现有布局和应用将被替换，是否继续？")) return;
+      commitState((draft) => {
+        syncActiveWorkspace(draft);
+        const target = draft.workspaces.find((workspace) => workspace.id === targetId);
+        target.layout = StudioloCore.clone(draft.layout);
+        target.apps = StudioloCore.clone(draft.apps);
+      });
+      showToast("布局和应用已复制", false);
+    });
+    document.getElementById("deleteWorkspaceBtn").addEventListener("click", () => {
+      if (state.workspaces.length <= 1) return;
+      const activeId = state.profile.activeWorkspaceId;
+      if (!window.confirm("确定删除当前工作区吗？可通过撤销恢复。")) return;
+      commitState((draft) => {
+        syncActiveWorkspace(draft);
+        draft.workspaces = draft.workspaces.filter((workspace) => workspace.id !== activeId);
+        const target = draft.workspaces[0];
+        draft.profile.activeWorkspaceId = target.id;
+        draft.layout = StudioloCore.clone(target.layout);
+        draft.apps = StudioloCore.clone(target.apps);
+      });
+      showToast("工作区已删除", true);
+    });
+  }
+
   /* =========================================================
    * 18. 统一设置面板
    * ========================================================= */
@@ -3844,6 +4374,7 @@
       if (dynamicToggle) dynamicToggle.checked = state.profile.dynamicWallpaper !== false;
       if (window.openConfigModal) window.openConfigModal();
       selectTab(tab || "desktop");
+      if ((tab || "desktop") === "data") document.getElementById("refreshVersionsBtn").click();
       openModal(backdrop, { initialFocus: document.getElementById("closeSettingsBtn") });
     };
 
@@ -3926,6 +4457,7 @@
    * 17. 启动入口 (进出编辑模式零 DOM 重建！)
    * ========================================================= */
   document.addEventListener("DOMContentLoaded", () => {
+    registerCloudWidgetAdapters();
     associateFormLabels(document);
     document.body.classList.toggle("reduced-motion", prefersReducedMotion());
     reducedMotionQuery.addEventListener("change", () => {
@@ -4010,6 +4542,8 @@
     initWidgetModals();
     initAppModal();
     initConfigModal();
+    initWorkspaceControls();
+    initVersionCenter();
     initSettingsPanel();
     renderWorkspace();
     Remote.init();

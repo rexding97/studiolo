@@ -4,6 +4,12 @@
 
 ### 新增
 
+- 组件注册表与 text / links / image / countdown / iframe 声明式纯数据插件，数组字段使用 JSON 配置
+- 多工作区管理：`workspaces`、`profile.activeWorkspaceId` 与顶层活动布局/应用镜像
+- 版本中心：远端快照列表、差异预览、单份读取与安全恢复
+- 主机最近 60 点 CPU / 内存 / 磁盘趋势及 SSH 命令复制
+- ICS 与基础只读 CalDAV 事件；CalDAV Basic 凭据按组件 ID 从服务端环境变量读取且不随 YAML 导出
+- 后端 calendar、快照读取/恢复及 readiness API
 - PR 与 main CI：Python 编译/unittest、全部 JavaScript 语法检查、Docker build、Compose config 和真实 HTTP 冒烟
 - Docker 一次性强制恢复模式及按备份内容记录的成功标记，避免重启反复覆盖
 
@@ -13,7 +19,7 @@
 - Docker 基础镜像固定到 Python 3.12.12 slim trixie patch tag，并显式使用 SIGTERM 停止
 - Homebrew 服务显式绑定 `127.0.0.1`
 - README 明确前端零构建、后端标准库与 psutil 的依赖边界，并补充备份恢复、升级回滚、诊断和保留策略
-- 架构文档区分当前实现与 core / remote / widgets 目标，限定用户插件为纯数据
+- 架构文档按当前 core / remote / widgets 实现说明状态、远程适配与纯数据插件边界
 
 ### 修复
 

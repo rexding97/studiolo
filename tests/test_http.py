@@ -34,6 +34,7 @@ class HTTPTests(unittest.TestCase):
         self.thread.start()
         self.port = self.server.server_address[1]
         self.cookie = None
+        self.cookie_name = "rex_sid"
 
     def tearDown(self):
         self.server.shutdown()
@@ -47,7 +48,7 @@ class HTTPTests(unittest.TestCase):
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
         headers = dict(headers or {})
         if self.cookie and "Cookie" not in headers:
-            headers["Cookie"] = "rex_sid=" + self.cookie
+            headers["Cookie"] = self.cookie_name + "=" + self.cookie
         connection.request(method, path, body=body, headers=headers)
         response = connection.getresponse()
         raw = response.read()
@@ -70,7 +71,25 @@ class HTTPTests(unittest.TestCase):
         status, _, headers = self.request("POST", "/api/v1/auth/login",
                                          json.dumps({"username": "admin", "password": "secret"}))
         self.assertEqual(200, status)
-        self.cookie = next(value.split(";")[0].split("=", 1)[1] for name, value in headers if name == "Set-Cookie")
+        pair = next(value.split(";")[0] for name, value in headers if name == "Set-Cookie")
+        self.cookie_name, self.cookie = pair.split("=", 1)
+        return headers
+
+    def test_csp_and_nosniff_on_static_and_api_responses(self):
+        required = (
+            "script-src 'self'", "style-src 'self' 'unsafe-inline'",
+            "img-src 'self' data: blob: http: https:", "media-src 'self' data: blob: http: https:",
+            "frame-src 'self' data: blob: http: https:", "connect-src 'self'", "object-src 'none'",
+            "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'",
+        )
+        for path in ("/index.html", "/api/v1/health"):
+            status, _, headers = self.request("GET", path)
+            self.assertEqual(200, status)
+            values = dict(headers)
+            csp = values["Content-Security-Policy"]
+            for directive in required:
+                self.assertIn(directive, csp)
+            self.assertEqual("nosniff", values["X-Content-Type-Options"])
 
     def test_static_head_and_api_head(self):
         status, raw, headers = self.request("HEAD", "/index.html")
@@ -102,13 +121,34 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(403, status)
         os.environ["REXHUB_SECURE_COOKIE"] = "true"
         try:
-            self.login()
-            status, _, headers = self.request("POST", "/api/v1/auth/logout", "{}",
-                                             headers={"Origin": f"http://127.0.0.1:{self.port}"})
+            login_headers = self.login()
+            host_cookie = next(value for name, value in login_headers if name == "Set-Cookie")
+            self.assertTrue(host_cookie.startswith("__Host-rex_sid="))
+            for attribute in ("Path=/", "Secure", "HttpOnly", "SameSite=Lax"):
+                self.assertIn(attribute, host_cookie)
+            self.assertNotIn("Domain", host_cookie)
+            status, payload, _ = self.request("GET", "/api/v1/auth/me")
+            self.assertEqual(200, status)
+            self.assertTrue(payload["authenticated"])
+
+            legacy = db.create_session("admin")
+            status, payload, _ = self.request("GET", "/api/v1/auth/me",
+                                             headers={"Cookie": "rex_sid=" + legacy})
+            self.assertEqual(200, status)
+            self.assertTrue(payload["authenticated"])
+            both = f"__Host-rex_sid={self.cookie}; rex_sid={legacy}"
+            status, _, headers = self.request("POST", "/api/v1/auth/logout", "{}", headers={
+                "Origin": f"http://127.0.0.1:{self.port}", "Cookie": both})
+            cleared = [value for name, value in headers if name == "Set-Cookie"]
+            self.assertEqual(2, len(cleared))
+            self.assertTrue(any(value.startswith("__Host-rex_sid=;") and "Secure" in value for value in cleared))
+            self.assertTrue(any(value.startswith("rex_sid=;") for value in cleared))
+            self.assertTrue(all("Max-Age=0" in value for value in cleared))
+            self.assertIsNone(db.check_session(self.cookie))
+            self.assertIsNone(db.check_session(legacy))
         finally:
             os.environ.pop("REXHUB_SECURE_COOKIE", None)
         self.assertEqual(200, status)
-        self.assertTrue(any(name == "Set-Cookie" and "Secure" in value for name, value in headers))
 
     def test_invalid_api_types_and_nested_config_are_400(self):
         self.login()

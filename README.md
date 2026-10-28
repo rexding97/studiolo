@@ -9,8 +9,12 @@ Studiolo 源自文艺复兴时期的私人书房——不待客，只属于主�
 ## 特性
 
 - **2D 原子网格**：自由拖放，空位保留，不自动补全；组件可任意改宽高
-- **可复用组件**：服务器节点、应用文件夹、天气、日历、便签、时钟
-- **多主机指标**：本机 psutil，远程 SSH，CPU / 内存 / 磁盘 / 延迟 / 在线状态
+- **组件注册表**：服务器节点、应用文件夹、天气、日历、便签、时钟统一注册与配置
+- **声明式插件**：text、links、image、countdown、iframe 纯数据插件，不执行用户 JavaScript
+- **多工作区**：新建、切换、重命名、复制与删除工作区，活动布局同步到顶层兼容镜像
+- **多主机指标**：本机 psutil、远程 SSH、最近 60 点 CPU/内存/磁盘趋势与 SSH 命令复制
+- **日历事件**：读取 ICS 与基础只读 CalDAV，在月历组件中展示事件
+- **版本中心**：查看服务端快照、状态差异、预览并恢复指定版本
 - **应用探测**：TCP + HTTP 探测，在线状态每 30 秒刷新
 - **近 7 天热度**：点击事件按周聚合，常用应用自动靠前
 - **主题工坊**：材质、圆角、模糊、图标形状、Logo 处理管线
@@ -18,8 +22,6 @@ Studiolo 源自文艺复兴时期的私人书房——不待客，只属于主�
 - **YAML 配置**：整份桌面可导出、导入、版本化
 - **轻量运行**：前端零构建、零运行时包依赖；后端使用 Python 标准库与 psutil
 - **单用户认证**：密码以 PBKDF2 哈希存储，会话 7 天
-
-工作区、声明式插件、ICS/CalDAV 和更严格的快照恢复是本迭代的后端/架构目标，具体接口与可用范围以最终代码和 `--help` 为准；本文不将这些目标视为已发布能力。
 
 ## 快速开始
 
@@ -114,7 +116,7 @@ brew services start studiolo
 
 ### 备份
 
-常规备份使用「设置 → 数据 → 导出 .yaml」。YAML 包含桌面布局、应用、主题、壁纸和热度等可移植状态，不包含密码、会话或主机运行时指标。
+常规备份使用「设置 → 数据 → 导出 .yaml」。YAML 包含工作区、活动工作区、布局、应用、声明式插件、日历来源 URL、主题、壁纸和热度等可移植状态，不包含账号密码、会话、CalDAV 凭据、SSH 私钥或主机运行时指标。
 
 需要完整 SQLite 备份时，使用 SQLite 在线备份而不是只复制可能仍有 WAL 的数据库文件：
 
@@ -182,7 +184,51 @@ Homebrew 使用 `brew services list` 和上述服务日志；LaunchAgent 使用 
 
 ## 多主机指标
 
-本机组件直接用 psutil 采集。其他主机通过 SSH 读取指标，需要事先配置免密登录，并在主机组件中填写 `ip`、`sshPort`（默认 22）和 `sshUser`。没有 SSH 的主机会显示为离线，不影响桌面其他部分。不要把私钥提交到仓库；CI 不依赖任何 SSH 私钥或真实外部主机。
+本机组件直接用 psutil 采集。其他主机通过 SSH 读取指标，需要事先配置免密登录，并在主机组件中填写 `ip`、`sshPort`（默认 22）和 `sshUser`。主机的「最近趋势」展示最近 60 点 CPU、内存和磁盘采样；SSH 按钮只复制连接命令，不会在浏览器中发起 SSH。没有 SSH 的主机会显示为离线，不影响桌面其他部分。不要把私钥提交到仓库；CI 不依赖任何 SSH 私钥或真实外部主机。
+
+## 工作区与版本中心
+
+每个工作区拥有独立的 `layout` 和 `apps`，`profile.activeWorkspaceId` 指定当前工作区。为兼容采集器和现有状态结构，顶层 `layout` / `apps` 始终是活动工作区的镜像；切换时由前端同步，导入时由状态规范化校验。
+
+「设置 → 数据 → 版本中心」可刷新服务端快照、查看差异和内容预览，并确认恢复所选版本。恢复冲突不会被静默覆盖；版本中心不替代独立 YAML/SQLite 备份。
+
+## 声明式插件
+
+组件注册表统一描述内置组件。用户插件只支持 `text`、`links`、`image`、`countdown`、`iframe` 五种纯数据类型，定义保存在 `state.plugins`，工作区布局通过 `widgetType: plugin` 与 `config.pluginId` 引用。
+
+`links` 的 `config.links` 和 `image` 的 `config.images` 是 **JSON 数组**，设置界面对应输入框也必须填写 JSON 数组，不是 YAML 列表或逗号分隔文本。例如：
+
+```json
+[
+  {
+    "id": "my-links",
+    "type": "links",
+    "name": "我的导航",
+    "config": {
+      "links": [
+        { "label": "GitHub", "url": "https://github.com", "description": "代码仓库" }
+      ]
+    }
+  }
+]
+```
+
+完整 YAML 导出把上述数组编码在 `pluginsJson`，工作区数组编码在 `workspacesJson`。插件不能包含用户 JavaScript；链接、图片和 iframe 只接受 HTTP(S)，iframe 使用受限 sandbox 且不授予 `allow-same-origin`。
+
+## ICS 与基础只读 CalDAV
+
+在月历组件中配置 `icsUrl` 或 `caldavUrl`，两者二选一。服务端通过 `GET /api/v1/calendar/events` 返回当前活动工作区的日历事件，也可用 `?id=<组件ID>` 查询指定来源。
+
+CalDAV 可选 Basic 凭据只从服务进程环境变量读取。组件 ID 转为大写、非字母数字替换为 `_` 后，拼接为：
+
+```text
+REXHUB_CALDAV_<规范化组件ID>_USERNAME
+REXHUB_CALDAV_<规范化组件ID>_PASSWORD
+```
+
+例如组件 ID `calendar-work` 使用 `REXHUB_CALDAV_CALENDAR_WORK_USERNAME` 和 `REXHUB_CALDAV_CALENDAR_WORK_PASSWORD`，两项必须同时设置。凭据不会进入状态或 YAML 导出；换机恢复后需重新配置。Docker Compose 仅在 `.env` 中写变量不会自动注入容器，还需在 `services.studiolo.environment` 显式转发同名变量。
+
+当前是基础只读客户端：ICS 使用 GET，CalDAV 使用 `Depth: 1` REPORT，只解析基本 VEVENT 标题、开始、结束和全天标记。不支持事件写入、日历发现、OAuth、完整同步或重复规则展开。
 
 ## 配置字段
 
@@ -222,38 +268,42 @@ apps:
 | `REXHUB_IMPORT_FORCE` | `0` | 强制覆盖；成功标记防止重复覆盖 |
 | `REXHUB_IMPORT_ONLY` | `0` | 设为 `1` 时初始化/导入后退出，用于一次性恢复 |
 | `PSUTIL_PROCFS_PATH` | 空 | 采集宿主机指标时指向 `/host/proc` |
+| `REXHUB_CALDAV_<ID>_USERNAME/PASSWORD` | 空 | 指定日历组件的可选 Basic 凭据；ID 大写且非字母数字转为 `_`，两项须同时设置 |
 | `PIP_INDEX_URL` | `https://pypi.org/simple` | 构建时的 pip 源 |
 
 ## HTTP API
 
-当前主要端点：
+当前端点：
 
 | 方法 | 路径 | 认证 | 说明 |
 | --- | --- | --- | --- |
 | POST | `/api/v1/auth/login` | - | 密码登录，写 HttpOnly Cookie |
 | POST | `/api/v1/auth/logout` | ✓ | 注销 |
+| POST | `/api/v1/auth/password` | ✓ | 修改密码并撤销其他会话 |
 | GET | `/api/v1/auth/me` | - | 当前会话 |
 | GET | `/api/v1/state` | ✓ | 读取桌面状态与版本号 |
 | PUT | `/api/v1/state` | ✓ | 写入状态，带 `rev` 乐观锁，冲突返回 409 |
 | GET | `/api/v1/state/meta` | ✓ | 轻量版本号，用于多端检测 |
 | GET | `/api/v1/state/snapshots` | ✓ | 快照元数据列表 |
 | GET | `/api/v1/state/snapshots/{rev}` | ✓ | 读取单份快照 |
-| POST | `/api/v1/state/snapshots/{rev}/restore` | ✓ | 校验并恢复快照 |
+| POST | `/api/v1/state/snapshots/{rev}/restore` | ✓ | 按 `expectedRev` / `force` 处理冲突并恢复快照 |
 | GET | `/api/v1/runtime` | ✓ | 主机指标、探针、天气、点击热度 |
-| GET | `/api/v1/metrics?host=` | ✓ | 单主机历史采样 |
+| GET | `/api/v1/metrics?host=<主机ID>` | ✓ | 单主机最近 60 点历史采样 |
+| GET | `/api/v1/calendar/events?id=<组件ID>` | ✓ | ICS / 基础只读 CalDAV 事件；`id` 可省略以查询全部来源 |
 | POST | `/api/v1/click` | ✓ | 记录一次点击 |
 | GET | `/api/v1/favicon?u=` | ✓ | favicon 抓取与缓存 |
 | GET | `/api/v1/weather?city=` | ✓ | Open-Meteo 代理 |
 | GET | `/api/v1/health` | - | 存活与诊断 |
-| GET | `/api/v1/ready` | - | 初始化、数据库和采集器就绪检查 |
-
-其他新远程集成端点不在此预先展开；以最终路由和 API 文档为准。
+| GET | `/api/v1/ready` | - | 初始化、数据库和采集器就绪检查；`/api/v1/readiness` 为别名 |
 
 ## 目录
 
 ```
-web/                 前端（无构建步骤）
-server/              Python 后端与 SQLite 持久层
+web/core.js          状态、工作区与 YAML/JSON 规范化
+web/remote.js        服务端同步与请求生命周期
+web/widgets.js       组件注册表、声明式插件校验与渲染
+web/cloudos.js       工作区交互、版本中心与设置界面
+server/              Python 后端、SQLite、采集与只读日历适配
 server/data/         运行时数据（不入库）
 Dockerfile           固定 patch 基础镜像与 psutil 版本
 docker-entrypoint.sh 初始化、严格导入与非 root 启动

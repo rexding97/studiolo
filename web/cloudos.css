@@ -1946,3 +1946,107 @@ body.dock-on .desktop-shell { padding-bottom: 96px; }
     will-change: auto;
   }
 }
+
+.workspace-select {
+  max-width: 180px;
+  padding: 8px 30px 8px 12px;
+  border: 1px solid var(--theme-card-border);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.68);
+  color: var(--theme-text);
+  font: 12px/1.2 inherit;
+}
+.workspace-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+}
+.workspace-actions .glass-btn { padding: 7px 10px; font-size: 12px; }
+.version-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.36fr) minmax(0, 1fr);
+  gap: 14px;
+  margin-top: 14px;
+}
+.version-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+.version-item {
+  padding: 9px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+.version-item.active { border-color: var(--theme-accent); color: #fff; }
+.version-detail { min-width: 0; }
+.version-preview {
+  max-height: 240px;
+  margin: 10px 0;
+  padding: 12px;
+  overflow: auto;
+  border-radius: 12px;
+  background: rgba(2, 6, 23, 0.55);
+  color: #bae6fd;
+  font: 10.5px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+#versionDiff { white-space: pre-line; }
+
+.host-sample { margin-top: 5px; color: var(--text-secondary); font-size: 10px; }
+.host-stale .host-sample { color: #fbbf24; }
+.host-offline .host-sample { color: #fb7185; }
+.host-trends { margin-top: 5px; color: var(--text-secondary); font-size: 10px; }
+.host-trends summary { cursor: pointer; user-select: none; }
+.host-trend-status { display: block; margin: 5px 0 2px; }
+.host-trend-row { display: grid; grid-template-columns: 30px minmax(0, 1fr); align-items: center; gap: 5px; }
+.host-trend-line { width: 100%; height: 24px; }
+.calendar-events {
+  min-height: 0;
+  max-height: 160px;
+  margin-top: 5px;
+  overflow-y: auto;
+  font-size: 10px;
+}
+.calendar-sync-status { margin-bottom: 4px; color: #fbbf24; }
+.calendar-event { display: flex; justify-content: space-between; gap: 8px; padding: 3px 0; }
+.calendar-event span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.calendar-event time { flex-shrink: 0; color: var(--text-secondary); }
+.calendar-event-empty { color: var(--text-secondary); }
+
+.plugin-content { min-height: 0; overflow: auto; }
+.plugin-widget { grid-template-rows: auto minmax(0, 1fr); }
+.plugin-text { font-size: 12px; line-height: 1.55; }
+.plugin-text-heading { margin: 5px 0; font-size: 15px; }
+.plugin-text-paragraph { margin: 5px 0; }
+.plugin-text-plain { font: 11px/1.5 inherit; white-space: pre-wrap; }
+.plugin-text-quote { padding-left: 8px; border-left: 2px solid var(--theme-accent); }
+.plugin-text-list { padding-left: 18px; }
+.plugin-markdown-link { color: #7dd3fc; }
+.plugin-links { align-content: start; overflow-y: auto; }
+.plugin-link { min-height: 52px; }
+.plugin-link-description { max-width: 100%; color: var(--text-secondary); font-size: 10px; }
+.plugin-image { margin: 0; }
+.plugin-image-frame { height: 100%; min-height: 0; }
+.plugin-image-media { width: 100%; height: 100%; object-fit: cover; border-radius: 12px; }
+.plugin-image-controls { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 10px; }
+.plugin-image-controls button { border: 0; background: transparent; color: #7dd3fc; cursor: pointer; }
+.plugin-countdown { align-self: center; font-size: 25px; font-variant-numeric: tabular-nums; text-align: center; }
+.plugin-iframe { width: 100%; height: 100%; border: 0; border-radius: 12px; background: #fff; }
+
+@media (max-width: 720px) {
+  .workspace-select { max-width: 150px; flex: 1 1 120px; }
+  .workspace-actions { justify-content: flex-start; }
+  .version-layout { grid-template-columns: 1fr; }
+  .version-list { max-height: 180px; }
+  .calendar-event { flex-direction: column; gap: 0; }
+}

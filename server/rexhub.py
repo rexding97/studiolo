@@ -248,7 +248,6 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", cache)
-        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "same-origin")
         for name, value in self._extra_headers:
             self.send_header(name, value)
@@ -262,6 +261,13 @@ class Handler(SimpleHTTPRequestHandler):
     def end_headers(self):
         if self._is_static and not self._extra_headers:
             self.send_header("Cache-Control", "no-cache, must-revalidate")
+        self.send_header("Content-Security-Policy", (
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: blob: http: https:; media-src 'self' data: blob: http: https:; "
+            "frame-src 'self' data: blob: http: https:; connect-src 'self'; font-src 'self' data:; "
+            "object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+        ))
+        self.send_header("X-Content-Type-Options", "nosniff")
         super().end_headers()
 
     def log_message(self, fmt, *args):

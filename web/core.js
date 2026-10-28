@@ -228,6 +228,20 @@
       item.w = finiteInteger(item.w, 4, 1, GRID_COLS);
       item.h = finiteInteger(item.h, 2, 1, 100);
       item.mobile = normalizeMobileRect(item.mobile, Math.min(4, item.w), item.h);
+      if (item.widgetType === "calendar") {
+        ["icsUrl", "caldavUrl"].forEach((key) => {
+          if (!item.config[key]) item.config[key] = "";
+          else item.config[key] = opts.repair
+            ? normalizeUrl(item.config[key]) || ""
+            : assertUrl(item.config[key], `日历 ${item.id} 的 ${key}`, true);
+        });
+        if (item.config.icsUrl && item.config.caldavUrl) throw new Error(`日历 ${item.id} 只能选择一种日程来源`);
+        Object.keys(item.config).forEach((key) => {
+          if (["password", "token", "secret", "authorization"].includes(key.toLowerCase())) {
+            throw new Error("CalDAV 凭据只能配置在服务端环境变量");
+          }
+        });
+      }
       return true;
     });
 
@@ -253,6 +267,65 @@
     } else {
       next.profile.customWallpaperUrl = "";
     }
+
+    if (source.plugins !== undefined && !Array.isArray(source.plugins)) throw new Error("plugins 必须是数组");
+    const pluginDefinitions = Array.isArray(source.plugins) ? source.plugins : [];
+    if (pluginDefinitions.length) {
+      if (!root.StudioloWidgets || typeof root.StudioloWidgets.normalizeDefinitions !== "function") {
+        throw new Error("插件运行时未加载，无法校验 plugins");
+      }
+      next.plugins = root.StudioloWidgets.normalizeDefinitions(pluginDefinitions);
+    } else {
+      next.plugins = [];
+    }
+    if (opts._skipWorkspaces) return next;
+
+    if (source.workspaces !== undefined && !Array.isArray(source.workspaces)) throw new Error("workspaces 必须是数组");
+    const workspaces = Array.isArray(source.workspaces) ? source.workspaces : [];
+    const workspaceIds = new Set();
+    next.workspaces = workspaces.map((workspace, index) => {
+      if (!isObject(workspace)) throw new Error(`workspaces[${index}] 必须是对象`);
+      const id = normalizeId(workspace.id, `workspaces[${index}]`);
+      if (workspaceIds.has(id)) throw new Error(`工作区 ID 重复：${id}`);
+      workspaceIds.add(id);
+      if (!Array.isArray(workspace.layout) || !Array.isArray(workspace.apps)) {
+        throw new Error(`工作区 ${id} 的 layout/apps 必须是数组`);
+      }
+      const normalized = normalizeState({
+        version: next.version,
+        profile: {},
+        layout: workspace.layout,
+        apps: workspace.apps,
+        plugins: []
+      }, { repair: opts.repair, _skipWorkspaces: true });
+      return {
+        id,
+        name: String(workspace.name || `工作区 ${index + 1}`).trim() || `工作区 ${index + 1}`,
+        layout: normalized.layout,
+        apps: normalized.apps
+      };
+    });
+    if (!next.workspaces.length) {
+      const id = normalizeId(next.profile.activeWorkspaceId || "workspace-default", "默认工作区");
+      next.workspaces = [{ id, name: "主桌面", layout: next.layout, apps: next.apps }];
+      workspaceIds.add(id);
+    }
+    const requestedActive = String(next.profile.activeWorkspaceId || next.workspaces[0].id);
+    if (!workspaceIds.has(requestedActive) && !opts.repair) throw new Error(`活动工作区不存在：${requestedActive}`);
+    const activeId = workspaceIds.has(requestedActive) ? requestedActive : next.workspaces[0].id;
+    next.profile.activeWorkspaceId = activeId;
+    const active = next.workspaces.find((workspace) => workspace.id === activeId);
+    next.layout = active.layout;
+    next.apps = active.apps;
+
+    const pluginIds = new Set(next.plugins.map((plugin) => plugin.id));
+    next.workspaces.forEach((workspace) => {
+      workspace.layout.forEach((item) => {
+        if (item.kind !== "widget" || item.widgetType !== "plugin") return;
+        const pluginId = item.config && item.config.pluginId;
+        if (!pluginIds.has(pluginId)) throw new Error(`布局 ${item.id} 引用了不存在的插件 ${pluginId || "(空)"}`);
+      });
+    });
     return next;
   }
 
@@ -294,6 +367,8 @@
       lines.push(`    pinned: ${Boolean(app.pinned)}`);
       lines.push(`    clicks: ${finiteInteger(app.clicks, 0, 0, Number.MAX_SAFE_INTEGER)}`);
     });
+    lines.push(`pluginsJson: ${yamlScalar(JSON.stringify(st.plugins || []))}`);
+    lines.push(`workspacesJson: ${yamlScalar(JSON.stringify(st.workspaces || []))}`);
     return lines.join("\n") + "\n";
   }
 
@@ -337,6 +412,19 @@
     yamlText.split(/\r?\n/).forEach((rawLine, lineIndex) => {
       const line = rawLine.replace(/\s+$/, "");
       if (!line.trim() || line.trim()[0] === "#") return;
+      const jsonSection = line.match(/^(pluginsJson|workspacesJson)\s*:\s*(.*)$/);
+      if (jsonSection) {
+        const key = jsonSection[1] === "pluginsJson" ? "plugins" : "workspaces";
+        try {
+          next[key] = JSON.parse(String(parseScalar(jsonSection[2])));
+        } catch (_) {
+          throw new Error(`第 ${lineIndex + 1} 行 ${jsonSection[1]} 损坏`);
+        }
+        if (!Array.isArray(next[key])) throw new Error(`${jsonSection[1]} 必须是数组`);
+        section = null;
+        current = null;
+        return;
+      }
       const sectionMatch = line.match(/^(version|profile|layout|apps)\s*:\s*(.*)$/);
       if (sectionMatch) {
         const key = sectionMatch[1];

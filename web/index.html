@@ -35,6 +35,7 @@
           <em class="sync-tip" id="syncTip">等待首次同步</em>
         </span>
 
+        <select id="workspaceSelect" class="workspace-select" aria-label="切换工作区"></select>
         <button type="button" class="glass-btn" id="toggleEditModeBtn">✦ 编辑桌面</button>
         <button type="button" class="glass-btn" id="openSettingsBtn">⚙ 设置</button>
       </div>
@@ -162,6 +163,19 @@
 
             <div class="settings-row" style="margin-top:22px">
               <div>
+                <div class="settings-row-title">工作区</div>
+                <div class="settings-row-desc" id="workspaceSummary">每个工作区独立保存布局和应用。</div>
+              </div>
+              <div class="workspace-actions">
+                <button type="button" class="glass-btn" id="newWorkspaceBtn">新建</button>
+                <button type="button" class="glass-btn" id="renameWorkspaceBtn">重命名</button>
+                <button type="button" class="glass-btn" id="copyWorkspaceLayoutBtn">复制布局到…</button>
+                <button type="button" class="glass-btn" id="deleteWorkspaceBtn">删除</button>
+              </div>
+            </div>
+
+            <div class="settings-row" style="margin-top:22px">
+              <div>
                 <div class="settings-row-title">底部 Dock</div>
                 <div class="settings-row-desc">固定显示置顶应用；没有置顶时按近 7 天热度取前 10 个。</div>
               </div>
@@ -232,6 +246,24 @@
               </div>
               <button type="button" class="glass-btn" id="applyYamlBtn" style="background:linear-gradient(135deg,#0284c7,#38bdf8)">解析并应用</button>
             </div>
+
+            <section class="version-center" aria-labelledby="versionCenterTitle">
+              <div class="settings-row" style="margin-top:24px">
+                <div>
+                  <h4 class="settings-row-title" id="versionCenterTitle">版本中心</h4>
+                  <div class="settings-row-desc" id="versionStatus" role="status">查看远端快照、差异并安全恢复。</div>
+                </div>
+                <button type="button" class="glass-btn" id="refreshVersionsBtn">刷新版本</button>
+              </div>
+              <div class="version-layout">
+                <div id="versionList" class="version-list" aria-label="远端快照列表"></div>
+                <div class="version-detail">
+                  <div id="versionDiff" class="settings-note">选择版本查看差异。</div>
+                  <pre id="versionPreview" class="version-preview" aria-label="快照预览"></pre>
+                  <button type="button" class="glass-btn" id="restoreVersionBtn" disabled>确认恢复所选版本</button>
+                </div>
+              </div>
+            </section>
           </section>
         </div>
       </div>
@@ -407,6 +439,7 @@
 
   <script src="core.js"></script>
   <script src="data.js"></script>
+  <script src="widgets.js"></script>
   <script src="remote.js"></script>
   <script src="cloudos.js"></script>
 </body>

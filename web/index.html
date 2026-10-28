@@ -54,10 +54,14 @@
             class="omni-input"
             placeholder="搜索任意应用 / 服务器 / 收藏，或直接回车网页搜索..."
             autocomplete="off"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded="false"
+            aria-controls="omniDropdown"
           />
           <span class="omni-kbd">/ 聚焦</span>
         </div>
-        <div class="omni-dropdown" id="omniDropdown" hidden></div>
+        <div class="omni-dropdown" id="omniDropdown" role="listbox" aria-label="搜索结果" hidden></div>
       </div>
     </section>
 
@@ -82,7 +86,7 @@
   </div>
 
   <!-- 3. 文件夹放大面板 -->
-  <div class="folder-backdrop" id="folderBackdrop">
+  <div class="folder-backdrop" id="folderBackdrop" role="dialog" aria-modal="true" aria-labelledby="folderModalTitle" hidden>
     <div class="folder-expanded-card">
       <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
         <div>
@@ -114,7 +118,7 @@
   <div class="app-popover" id="appPopover" role="tooltip"></div>
 
   <!-- 5. 统一设置面板 -->
-  <div class="modal-backdrop" id="settingsBackdrop" hidden>
+  <div class="modal-backdrop" id="settingsBackdrop" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" hidden>
     <div class="modal-panel settings-panel">
       <aside class="settings-sidebar">
         <div class="settings-brand">Studiolo</div>
@@ -159,7 +163,7 @@
             <div class="settings-row" style="margin-top:22px">
               <div>
                 <div class="settings-row-title">底部 Dock</div>
-                <div class="settings-row-desc">固定显示置顶应用；没有置顶时按近 7 天热度取前 8 个。</div>
+                <div class="settings-row-desc">固定显示置顶应用；没有置顶时按近 7 天热度取前 10 个。</div>
               </div>
               <label class="switch">
                 <input type="checkbox" id="dockEnabledToggle" />
@@ -235,7 +239,7 @@
   </div>
 
   <!-- 6. 组件配置器 -->
-  <div class="modal-backdrop" id="widgetConfigBackdrop" hidden>
+  <div class="modal-backdrop" id="widgetConfigBackdrop" role="dialog" aria-modal="true" aria-labelledby="wcfgModalTitle" hidden>
     <div class="modal-panel">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
         <h3 id="wcfgModalTitle" style="font-size:18px;font-weight:680">配置组件</h3>
@@ -286,11 +290,11 @@
   </div>
 
   <!-- 7. 新增可复用组件 -->
-  <div class="modal-backdrop" id="widgetStoreBackdrop" hidden>
+  <div class="modal-backdrop" id="widgetStoreBackdrop" role="dialog" aria-modal="true" aria-labelledby="widgetStoreTitle" hidden>
     <div class="modal-panel" style="max-width:680px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
         <div>
-          <h3 style="font-size:18px;font-weight:680">＋ 新增可复用小组件</h3>
+          <h3 id="widgetStoreTitle" style="font-size:18px;font-weight:680">＋ 新增可复用小组件</h3>
           <div style="font-size:12.5px;color:var(--text-secondary);margin-top:3px">
             服务器、收藏夹、天气、日历、便签都可以无限复用，点击后在桌面空位创建新实例。
           </div>
@@ -303,7 +307,7 @@
   </div>
 
   <!-- 8. 应用/网站图标定制器 -->
-  <div class="modal-backdrop" id="appModalBackdrop" hidden>
+  <div class="modal-backdrop" id="appModalBackdrop" role="dialog" aria-modal="true" aria-labelledby="appModalTitle" hidden>
     <div class="modal-panel">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
         <h3 id="appModalTitle" style="font-size:18px;font-weight:680">定制应用图标</h3>
@@ -387,10 +391,10 @@
     </div>
   </div>
 
-  <div id="authOverlay" class="auth-overlay" hidden>
+  <div id="authOverlay" class="auth-overlay" role="dialog" aria-modal="true" aria-labelledby="authTitle" hidden>
     <form id="authForm" class="auth-card" autocomplete="on">
       <div class="auth-mark">S</div>
-      <h2>Studiolo</h2>
+      <h2 id="authTitle">Studiolo</h2>
       <p class="auth-sub">私有桌面 · 需要访问密码</p>
       <p id="authHint" class="auth-hint">请输入访问密码</p>
       <input id="authPassword" type="password" name="password" autocomplete="current-password" placeholder="访问密码" required />

@@ -1769,7 +1769,7 @@ body.dock-on .desktop-shell { padding-bottom: 96px; }
     display: none;
   }
   #toggleEditModeBtn {
-    display: none;
+    display: inline-flex;
   }
 
   .hero-area {
@@ -1789,21 +1789,13 @@ body.dock-on .desktop-shell { padding-bottom: 96px; }
   }
 
   .atomic-grid {
-    grid-template-columns: repeat(12, minmax(0, 1fr)) !important;
-    grid-auto-rows: auto !important;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    grid-auto-rows: 96px !important;
     gap: 12px !important;
-    min-height: 0 !important;
-  }
-  .atomic-grid > .widget-shell {
-    grid-column: 1 / -1 !important;
-    grid-row: auto !important;
-  }
-  .atomic-grid > .app-unit {
-    grid-column: span 3 !important;
-    grid-row: auto !important;
+    min-height: calc(96px * 4 + 12px * 3) !important;
   }
   .grid-slot-indicator {
-    display: none !important;
+    display: block;
   }
   .widget-shell {
     padding: 14px 13px;
@@ -1811,8 +1803,8 @@ body.dock-on .desktop-shell { padding-bottom: 96px; }
 
   .settings-panel {
     width: 100vw;
-    height: 100vh;
-    max-height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
     border-radius: 0;
     flex-direction: column;
   }
@@ -1867,9 +1859,6 @@ body.dock-on .desktop-shell { padding-bottom: 96px; }
 }
 
 @media (max-width: 420px) {
-  .atomic-grid > .app-unit {
-    grid-column: span 4 !important;
-  }
   .hero-clock {
     font-size: 38px;
   }
@@ -1880,5 +1869,80 @@ body.dock-on .desktop-shell { padding-bottom: 96px; }
   .settings-nav button {
     padding: 8px 9px;
     font-size: 12px;
+  }
+}
+
+:root { --app-heading-weight: 680; }
+.brand-name,
+.widget-title,
+.hero-clock,
+.settings-head h3,
+.modal-panel h2,
+.modal-panel h3 {
+  font-weight: var(--app-heading-weight);
+}
+
+.app-unit[type="button"] {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.widget-resize-corner { padding: 0; border: 0; }
+.wp-swatch { width: 100%; color: #fff; text-align: left; }
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--theme-accent);
+  outline-offset: 3px;
+}
+.atomic-grid > [data-item-id]:focus-visible {
+  outline: 2px solid var(--theme-accent);
+  outline-offset: 5px;
+}
+
+.folder-backdrop[hidden] { display: none; }
+.folder-expanded-card {
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.modal-backdrop {
+  max-height: 100dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.modal-panel { max-height: calc(100dvh - 40px); }
+.settings-panel {
+  height: min(780px, 88dvh);
+  max-height: 88dvh;
+}
+.stage-dock {
+  max-width: calc(100vw - 24px);
+  overflow-x: auto;
+  overflow-y: hidden;
+  justify-content: flex-start;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+.stage-dock .app-unit { flex: 0 0 64px; }
+
+@media (max-width: 720px) {
+  .folder-expanded-card { max-height: calc(100dvh - 32px); }
+  .settings-panel { max-height: 100dvh; }
+  .widget-edit-toolbar { max-width: calc(100vw - 40px); }
+  .widget-resize-corner { width: 30px; height: 30px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.001ms !important;
+  }
+  .ambient-orb,
+  .app-unit,
+  .widget-shell,
+  .pointer-drag-avatar {
+    will-change: auto;
   }
 }

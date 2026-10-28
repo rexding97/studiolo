@@ -143,6 +143,16 @@
     return layout;
   }
 
+  function normalizeMobileRect(value, fallbackW, fallbackH) {
+    if (!isObject(value)) return undefined;
+    return {
+      x: finiteInteger(value.x, 1, 1, 4),
+      y: finiteInteger(value.y, 1, 1, 10000),
+      w: finiteInteger(value.w, fallbackW, 1, 4),
+      h: finiteInteger(value.h, fallbackH, 1, 100)
+    };
+  }
+
   function normalizeState(input, options) {
     const opts = options || {};
     if (!isObject(input)) throw new Error("配置根节点必须是对象");
@@ -205,6 +215,7 @@
         item.appId = String(item.appId);
         item.w = 1;
         item.h = 1;
+        item.mobile = normalizeMobileRect(item.mobile, 1, 1);
         return true;
       }
       if (item.kind !== "widget") {
@@ -216,6 +227,7 @@
       if (!isObject(item.config)) throw new Error(`组件 ${item.id} 的 config 必须是对象`);
       item.w = finiteInteger(item.w, 4, 1, GRID_COLS);
       item.h = finiteInteger(item.h, 2, 1, 100);
+      item.mobile = normalizeMobileRect(item.mobile, Math.min(4, item.w), item.h);
       return true;
     });
 
@@ -263,6 +275,7 @@
       lines.push(`  - id: ${yamlScalar(item.id)}`);
       lines.push(`    kind: ${yamlScalar(item.kind)}`);
       lines.push(`    x: ${item.x}`, `    y: ${item.y}`, `    w: ${item.w}`, `    h: ${item.h}`);
+      if (item.mobile) lines.push(`    mobileJson: ${yamlScalar(JSON.stringify(item.mobile))}`);
       if (item.kind === "app") lines.push(`    appId: ${yamlScalar(item.appId)}`);
       else {
         lines.push(`    widgetType: ${yamlScalar(item.widgetType)}`);
@@ -363,14 +376,15 @@
       if (!property || !current) throw new Error(`第 ${lineIndex + 1} 行列表属性格式无效`);
       const key = property[1];
       const value = parseScalar(property[2]);
-      if (key === "configJson") {
+      if (key === "configJson" || key === "mobileJson") {
         const json = String(value);
+        const targetKey = key === "configJson" ? "config" : "mobile";
         try {
-          current.config = JSON.parse(json);
+          current[targetKey] = JSON.parse(json);
         } catch (_) {
-          throw new Error(`第 ${lineIndex + 1} 行 configJson 损坏`);
+          throw new Error(`第 ${lineIndex + 1} 行 ${key} 损坏`);
         }
-        if (!isObject(current.config)) throw new Error(`第 ${lineIndex + 1} 行 configJson 必须是对象`);
+        if (!isObject(current[targetKey])) throw new Error(`第 ${lineIndex + 1} 行 ${key} 必须是对象`);
       } else current[key] = value;
     });
     return normalizeState(next);

@@ -16,6 +16,12 @@
 (function () {
   const STORAGE_KEY = "rex_cloudos_state_v4";
   const GRID_COLS = 12;
+  const MOBILE_GRID_COLS = 4;
+  const mobileLayoutQuery = window.matchMedia("(max-width: 720px)");
+  const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+  const modalStack = [];
+  let workspaceRenderFrame = null;
+  let gridSyncFrame = null;
 
   // GitHub Pages 等纯静态托管时启用示例数据，不请求后端
   const DEMO_MODE =
@@ -31,11 +37,14 @@
 
   // Favicon 探测缓存：appId -> string (有效图片 URL) | false (无有效图片)
   const logoStatusCache = new Map();
+  const logoProbeCache = new Map();
+  let logoCacheGeneration = 0;
   // 正在运行的 FLIP 动画句柄缓存：flipKey -> Animation
   const activeFlipAnimations = new Map();
 
   let state = loadState();
   normalizeLayoutCoordinates(state.layout);
+  normalizeMobileLayout(state.layout);
 
   let editMode = false;
   let editingAppId = null;
@@ -119,6 +128,7 @@
     const candidate = StudioloCore.normalizeState(StudioloCore.clone(nextState), { repair: opts.repair === true });
     state = migrateProfile(candidate);
     normalizeLayoutCoordinates(state.layout);
+    normalizeMobileLayout(state.layout);
     if (opts.clearHistory) {
       undoStack.length = 0;
       redoStack.length = 0;
@@ -178,6 +188,126 @@
   }
 
   window.addEventListener("pagehide", writeLocalState);
+
+  function associateFormLabels(container) {
+    if (!container) return;
+    container.querySelectorAll("label").forEach((label) => {
+      const control = label.parentElement.querySelector("input, select, textarea");
+      if (!control || label.contains(control)) return;
+      associateFormLabels.sequence = (associateFormLabels.sequence || 0) + 1;
+      if (!control.id) control.id = `form-control-${associateFormLabels.sequence}`;
+      label.htmlFor = control.id;
+    });
+  }
+
+  function modalFocusable(container) {
+    return Array.from(container.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    )).filter((element) => !element.closest("[hidden]") && element.getAttribute("aria-hidden") !== "true");
+  }
+
+  function applyModalInert() {
+    const active = modalStack.length ? modalStack[modalStack.length - 1].element : null;
+    Array.from(document.body.children).forEach((element) => {
+      if (element.tagName === "SCRIPT") return;
+      if (element === active) {
+        element.inert = false;
+        if (element.hasAttribute("data-modal-previous-aria")) {
+          const previous = element.getAttribute("data-modal-previous-aria");
+          if (previous) element.setAttribute("aria-hidden", previous);
+          else element.removeAttribute("aria-hidden");
+          element.removeAttribute("data-modal-previous-aria");
+        }
+        return;
+      }
+      if (active) {
+        if (!element.hasAttribute("data-modal-previous-aria")) {
+          element.setAttribute("data-modal-previous-aria", element.getAttribute("aria-hidden") || "");
+        }
+        element.inert = true;
+        element.setAttribute("aria-hidden", "true");
+      } else {
+        element.inert = false;
+        if (element.hasAttribute("data-modal-previous-aria")) {
+          const previous = element.getAttribute("data-modal-previous-aria");
+          if (previous) element.setAttribute("aria-hidden", previous);
+          else element.removeAttribute("aria-hidden");
+          element.removeAttribute("data-modal-previous-aria");
+        }
+      }
+    });
+  }
+
+  function openModal(element, options = {}) {
+    if (!element) return;
+    const existing = modalStack.findIndex((entry) => entry.element === element);
+    if (existing >= 0) modalStack.splice(existing, 1);
+    const entry = { element, options, previousFocus: document.activeElement };
+    modalStack.push(entry);
+    element.hidden = false;
+    element.inert = false;
+    if (!element.hasAttribute("role")) element.setAttribute("role", "dialog");
+    element.setAttribute("aria-modal", "true");
+    element.removeAttribute("aria-hidden");
+    applyModalInert();
+    requestAnimationFrame(() => {
+      if (modalStack[modalStack.length - 1] !== entry) return;
+      const target = options.initialFocus || modalFocusable(element)[0] || element;
+      if (!target.hasAttribute("tabindex") && target === element) target.tabIndex = -1;
+      target.focus({ preventScroll: true });
+    });
+  }
+
+  function closeModal(element, restoreFocus = true) {
+    const index = modalStack.findIndex((entry) => entry.element === element);
+    if (index < 0) {
+      if (element) element.hidden = true;
+      return;
+    }
+    const [entry] = modalStack.splice(index, 1);
+    element.hidden = true;
+    element.classList.remove("open");
+    if (typeof entry.options.onClose === "function") entry.options.onClose();
+    applyModalInert();
+    if (restoreFocus) {
+      const target = entry.previousFocus && entry.previousFocus.isConnected
+        ? entry.previousFocus
+        : document.getElementById("toggleEditModeBtn");
+      if (target && target.isConnected && !target.inert) target.focus({ preventScroll: true });
+    }
+  }
+
+  document.addEventListener("keydown", (event) => {
+    if (!modalStack.length) return;
+    const entry = modalStack[modalStack.length - 1];
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      if (entry.options.closable === false) return;
+      if (typeof entry.options.onEscape === "function") entry.options.onEscape();
+      else closeModal(entry.element);
+      return;
+    }
+    if (event.key !== "Tab") return;
+    const focusable = modalFocusable(entry.element);
+    if (!focusable.length) {
+      event.preventDefault();
+      entry.element.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    } else if (!entry.element.contains(document.activeElement)) {
+      event.preventDefault();
+      first.focus();
+    }
+  }, true);
 
   /* =========================================================
    * 0. 远端同步层：登录、state 拉取/推送、runtime 轮询
@@ -239,10 +369,10 @@
         actions.style.cssText = "display:flex;gap:10px;flex-wrap:wrap;margin-top:16px";
         panel.append(title, description, details, actions);
         host.appendChild(panel);
-        host.hidden = false;
+        openModal(host, { onEscape: () => finish("defer") });
 
         function finish(action) {
-          host.hidden = true;
+          closeModal(host);
           host.style.display = "none";
           host.innerHTML = "";
           resolve(action);
@@ -283,7 +413,7 @@
         show("登录已过期，请重新登录");
       },
       onFirstSync: () => {
-        logoStatusCache.clear();
+        clearLogoCaches();
         renderWorkspace();
       },
       onConflict: showConflict,
@@ -330,7 +460,7 @@
             authed = true;
             sync.setAuthenticated(true);
             setSync("saving");
-            logoStatusCache.clear();
+            clearLogoCaches();
             renderWorkspace();
             await pullState();
             startRuntime();
@@ -343,18 +473,14 @@
     function show(message) {
       const el = overlay();
       if (!el) return;
-      el.hidden = false;
+      openModal(el, { closable: false, initialFocus: document.getElementById("authPassword") });
       const hint = document.getElementById("authHint");
       if (message && hint) hint.textContent = message;
-      setTimeout(() => {
-        const input = document.getElementById("authPassword");
-        if (input) input.focus();
-      }, 60);
     }
 
     function hide() {
       const el = document.getElementById("authOverlay");
-      if (el) el.hidden = true;
+      if (el) closeModal(el);
     }
 
     function schedulePush(snapshot, delay) {
@@ -592,7 +718,7 @@
       }
       authed = true;
       hide();
-      logoStatusCache.clear();
+      clearLogoCaches();
       renderWorkspace();
       await pullState();
       startRuntime();
@@ -630,31 +756,51 @@
     );
   }
 
-  function isAreaFree(layoutList, x, y, w, h, ignoreId = null) {
-    if (x < 1 || y < 1 || x + w - 1 > GRID_COLS) return false;
-    const testRect = { x, y, w, h };
-    for (const item of layoutList) {
-      if (item.id === ignoreId) continue;
-      const itemRect = {
-        x: item.x || 1,
-        y: item.y || 1,
-        w: item.kind === "app" ? 1 : item.w || 4,
-        h: item.kind === "app" ? 1 : item.h || 2
-      };
-      if (rectsOverlap(testRect, itemRect)) return false;
-    }
-    return true;
+  function isMobileLayout() {
+    return mobileLayoutQuery.matches;
   }
 
-  function findFirstFreeSpot(layoutList, w, h, ignoreId = null, startRow = 1) {
-    for (let r = Math.max(1, startRow); r <= 50; r++) {
-      for (let c = 1; c <= GRID_COLS - w + 1; c++) {
-        if (isAreaFree(layoutList, c, r, w, h, ignoreId)) {
-          return { x: c, y: r };
-        }
+  function getLayoutRect(item, useMobile = isMobileLayout()) {
+    const source = useMobile && item.mobile ? item.mobile : item;
+    const columns = useMobile ? MOBILE_GRID_COLS : GRID_COLS;
+    const fallbackW = item.kind === "app" ? 1 : Math.min(columns, Number(item.w) || 4);
+    const fallbackH = item.kind === "app" ? 1 : Number(item.h) || 2;
+    return {
+      x: Math.max(1, Math.min(columns, Math.round(Number(source.x) || 1))),
+      y: Math.max(1, Math.round(Number(source.y) || 1)),
+      w: item.kind === "app" ? 1 : Math.max(1, Math.min(columns, Math.round(Number(source.w) || fallbackW))),
+      h: item.kind === "app" ? 1 : Math.max(1, Math.min(100, Math.round(Number(source.h) || fallbackH)))
+    };
+  }
+
+  function setLayoutRect(item, rect, useMobile = isMobileLayout()) {
+    const columns = useMobile ? MOBILE_GRID_COLS : GRID_COLS;
+    const normalized = {
+      x: Math.max(1, Math.min(columns - rect.w + 1, Math.round(rect.x))),
+      y: Math.max(1, Math.round(rect.y)),
+      w: item.kind === "app" ? 1 : Math.max(1, Math.min(columns, Math.round(rect.w))),
+      h: item.kind === "app" ? 1 : Math.max(1, Math.min(100, Math.round(rect.h)))
+    };
+    normalized.x = Math.max(1, Math.min(columns - normalized.w + 1, normalized.x));
+    if (useMobile) item.mobile = normalized;
+    else Object.assign(item, normalized);
+  }
+
+  function isAreaFree(layoutList, x, y, w, h, ignoreId = null, useMobile = isMobileLayout()) {
+    const columns = useMobile ? MOBILE_GRID_COLS : GRID_COLS;
+    if (x < 1 || y < 1 || x + w - 1 > columns) return false;
+    const testRect = { x, y, w, h };
+    return !layoutList.some((item) => item.id !== ignoreId && rectsOverlap(testRect, getLayoutRect(item, useMobile)));
+  }
+
+  function findFirstFreeSpot(layoutList, w, h, ignoreId = null, startRow = 1, useMobile = isMobileLayout()) {
+    const columns = useMobile ? MOBILE_GRID_COLS : GRID_COLS;
+    for (let r = Math.max(1, startRow); r <= 10000; r++) {
+      for (let c = 1; c <= columns - w + 1; c++) {
+        if (isAreaFree(layoutList, c, r, w, h, ignoreId, useMobile)) return { x: c, y: r };
       }
     }
-    return { x: 1, y: 1 };
+    return null;
   }
 
   function normalizeLayoutCoordinates(layoutList) {
@@ -662,18 +808,29 @@
     for (const item of layoutList) {
       item.w = item.kind === "app" ? 1 : Number(item.w) || 4;
       item.h = item.kind === "app" ? 1 : Number(item.h) || 2;
-      if (
-        typeof item.x === "number" &&
-        typeof item.y === "number" &&
-        isAreaFree(placed, item.x, item.y, item.w, item.h, item.id)
-      ) {
+      const rect = getLayoutRect(item, false);
+      if (isAreaFree(placed, rect.x, rect.y, rect.w, rect.h, item.id, false)) {
+        setLayoutRect(item, rect, false);
         placed.push(item);
       } else {
-        const spot = findFirstFreeSpot(placed, item.w, item.h, item.id, 1);
-        item.x = spot.x;
-        item.y = spot.y;
+        const spot = findFirstFreeSpot(placed, rect.w, rect.h, item.id, 1, false);
+        if (spot) setLayoutRect(item, Object.assign({}, rect, spot), false);
         placed.push(item);
       }
+    }
+  }
+
+  function normalizeMobileLayout(layoutList) {
+    const placed = [];
+    for (const item of layoutList) {
+      const rect = getLayoutRect(item, true);
+      if (isAreaFree(placed, rect.x, rect.y, rect.w, rect.h, item.id, true)) {
+        setLayoutRect(item, rect, true);
+      } else {
+        const spot = findFirstFreeSpot(placed, rect.w, rect.h, item.id, 1, true);
+        if (spot) setLayoutRect(item, Object.assign({}, rect, spot), true);
+      }
+      placed.push(item);
     }
   }
 
@@ -681,111 +838,96 @@
     const snap = new Map();
     state.layout.forEach((item) => {
       snap.set(item.id, {
-        x: item.x || 1,
-        y: item.y || 1,
-        w: item.kind === "app" ? 1 : item.w || 4,
-        h: item.kind === "app" ? 1 : item.h || 2
+        desktop: getLayoutRect(item, false),
+        mobile: getLayoutRect(item, true)
       });
     });
     return snap;
   }
 
-  function restoreFromSnapshot(snap) {
+  function restoreFromSnapshot(snap, useMobile = null) {
     if (!snap) return;
     state.layout.forEach((item) => {
-      const orig = snap.get(item.id);
-      if (orig) {
-        item.x = orig.x;
-        item.y = orig.y;
-      }
+      const original = snap.get(item.id);
+      if (!original) return;
+      if (useMobile === null || useMobile === false) setLayoutRect(item, original.desktop, false);
+      if (useMobile === null || useMobile === true) setLayoutRect(item, original.mobile, true);
     });
   }
 
-  function projectDragToCoord(itemId, targetX, targetY, baseSnap) {
+  function projectLayoutTransaction(itemId, requestedRect, baseSnap, options = {}) {
+    const useMobile = options.useMobile === undefined ? isMobileLayout() : options.useMobile;
     const snap = baseSnap || captureLayoutSnapshot();
-    const item = state.layout.find((x) => x.id === itemId);
+    const item = state.layout.find((entry) => entry.id === itemId);
     if (!item) return false;
+    const before = new Map(state.layout.map((entry) => [entry.id, JSON.stringify(getLayoutRect(entry, useMobile))]));
+    restoreFromSnapshot(snap, useMobile);
 
-    const w = item.kind === "app" ? 1 : item.w || 4;
-    const h = item.kind === "app" ? 1 : item.h || 2;
-    const clampedX = Math.max(1, Math.min(GRID_COLS - w + 1, targetX));
-    const clampedY = Math.max(1, targetY);
+    const original = snap.get(itemId);
+    const originalSelf = original ? (useMobile ? original.mobile : original.desktop) : getLayoutRect(item, useMobile);
+    const current = getLayoutRect(item, useMobile);
+    const columns = useMobile ? MOBILE_GRID_COLS : GRID_COLS;
+    const requested = Object.assign({}, current, requestedRect || {});
+    const w = item.kind === "app" ? 1 : Math.max(1, Math.min(columns, Math.round(Number(requested.w) || current.w)));
+    const h = item.kind === "app" ? 1 : Math.max(1, Math.min(100, Math.round(Number(requested.h) || current.h)));
+    const target = {
+      x: Math.max(1, Math.min(columns - w + 1, Math.round(Number(requested.x) || current.x))),
+      y: Math.max(1, Math.round(Number(requested.y) || current.y)),
+      w,
+      h
+    };
+    setLayoutRect(item, target, useMobile);
+    const placed = [item];
 
-    const prevCoords = new Map();
-    state.layout.forEach((it) => prevCoords.set(it.id, `${it.x},${it.y}`));
-
-    restoreFromSnapshot(snap);
-
-    const origSelf = snap.get(itemId) || { x: item.x, y: item.y, w, h };
-    const targetRect = { x: clampedX, y: clampedY, w, h };
-
-    const blockers = state.layout.filter((other) => {
-      if (other.id === item.id) return false;
-      const oRect = {
-        x: other.x,
-        y: other.y,
-        w: other.kind === "app" ? 1 : other.w || 4,
-        h: other.kind === "app" ? 1 : other.h || 2
-      };
-      return rectsOverlap(targetRect, oRect);
-    });
-
-    if (blockers.length === 0) {
-      item.x = clampedX;
-      item.y = clampedY;
-    } else if (item.kind === "app" && blockers.some((b) => b.kind === "widget")) {
-      return false;
-    } else if (blockers.length === 1) {
-      const b = blockers[0];
-      const bw = b.kind === "app" ? 1 : b.w || 4;
-      const bh = b.kind === "app" ? 1 : b.h || 2;
-
-      item.x = clampedX;
-      item.y = clampedY;
-
-      if (bw <= origSelf.w && bh <= origSelf.h && isAreaFree(state.layout, origSelf.x, origSelf.y, bw, bh, b.id)) {
-        b.x = origSelf.x;
-        b.y = origSelf.y;
-      } else if (isAreaFree(state.layout, clampedX, clampedY + h, bw, bh, b.id)) {
-        b.x = clampedX;
-        b.y = clampedY + h;
+    for (const other of state.layout) {
+      if (other.id === item.id) continue;
+      let candidate = getLayoutRect(other, useMobile);
+      const collides = () => placed.some((entry) => rectsOverlap(candidate, getLayoutRect(entry, useMobile)));
+      if (!collides()) {
+        placed.push(other);
+        continue;
+      }
+      if (item.kind === "app" && other.kind === "widget") {
+        restoreFromSnapshot(snap, useMobile);
+        return false;
+      }
+      if (
+        candidate.w <= originalSelf.w &&
+        candidate.h <= originalSelf.h &&
+        isAreaFree(placed, originalSelf.x, originalSelf.y, candidate.w, candidate.h, null, useMobile)
+      ) {
+        candidate = Object.assign({}, candidate, { x: originalSelf.x, y: originalSelf.y });
       } else {
-        restoreFromSnapshot(snap);
-        return false;
-      }
-    } else {
-      item.x = clampedX;
-      item.y = clampedY;
-      let allFitInOrig = true;
-      for (const b of blockers) {
-        const bw = b.kind === "app" ? 1 : b.w || 4;
-        const bh = b.kind === "app" ? 1 : b.h || 2;
-        let placedInOrig = false;
-        for (let ry = origSelf.y; ry <= origSelf.y + origSelf.h - bh && !placedInOrig; ry++) {
-          for (let cx = origSelf.x; cx <= origSelf.x + origSelf.w - bw && !placedInOrig; cx++) {
-            if (isAreaFree(state.layout, cx, ry, bw, bh, b.id)) {
-              b.x = cx;
-              b.y = ry;
-              placedInOrig = true;
-            }
-          }
+        const spot =
+          findFirstFreeSpot(placed, candidate.w, candidate.h, null, target.y, useMobile) ||
+          findFirstFreeSpot(placed, candidate.w, candidate.h, null, 1, useMobile);
+        if (!spot) {
+          restoreFromSnapshot(snap, useMobile);
+          return false;
         }
-        if (!placedInOrig) {
-          allFitInOrig = false;
-          break;
-        }
+        candidate = Object.assign({}, candidate, spot);
       }
-      if (!allFitInOrig) {
-        restoreFromSnapshot(snap);
-        return false;
-      }
+      setLayoutRect(other, candidate, useMobile);
+      placed.push(other);
     }
 
-    let anyChanged = false;
-    state.layout.forEach((it) => {
-      if (prevCoords.get(it.id) !== `${it.x},${it.y}`) anyChanged = true;
-    });
-    return anyChanged;
+    return state.layout.some((entry) => before.get(entry.id) !== JSON.stringify(getLayoutRect(entry, useMobile)));
+  }
+
+  function projectDragToCoord(itemId, targetX, targetY, baseSnap) {
+    const item = state.layout.find((entry) => entry.id === itemId);
+    if (!item) return false;
+    const current = getLayoutRect(item);
+    return projectLayoutTransaction(itemId, { x: targetX, y: targetY, w: current.w, h: current.h }, baseSnap);
+  }
+
+  function commitLayoutRect(itemId, rect, options = {}) {
+    const changed = projectLayoutTransaction(itemId, rect, options.baseSnapshot || captureLayoutSnapshot(), options);
+    if (!changed) return false;
+    syncGridCoordsWithFlip(options.skipFlipKey || null);
+    if (options.persist !== false) saveState();
+    if (options.structure) scheduleRenderWithFlip();
+    return true;
   }
 
   /* =========================================================
@@ -801,6 +943,11 @@
   }
 
   function playFlipAnimation(prevRects, skipKey = null) {
+    if (prefersReducedMotion()) {
+      activeFlipAnimations.forEach((animation) => animation.cancel());
+      activeFlipAnimations.clear();
+      return;
+    }
     if (!prevRects || !prevRects.size) return;
     document.querySelectorAll("[data-flip-key]").forEach((el) => {
       const key = el.dataset.flipKey;
@@ -841,24 +988,65 @@
   }
 
   function renderWithFlip() {
+    if (workspaceRenderFrame) cancelAnimationFrame(workspaceRenderFrame);
+    workspaceRenderFrame = null;
     const before = capturePositions();
     renderWorkspace();
     playFlipAnimation(before);
     refreshContainerSelectOptions();
   }
 
-  function syncGridCoordsWithFlip(skipFlipKey = null) {
+  function scheduleRenderWithFlip() {
+    if (workspaceRenderFrame) return;
     const before = capturePositions();
-    state.layout.forEach((item) => {
-      const domEl = document.querySelector(`[data-item-id="${item.id}"]`);
-      if (domEl) {
-        const w = item.kind === "app" ? 1 : item.w || 4;
-        const h = item.kind === "app" ? 1 : item.h || 2;
-        domEl.style.gridColumn = `${item.x} / span ${w}`;
-        domEl.style.gridRow = `${item.y} / span ${h}`;
-      }
+    workspaceRenderFrame = requestAnimationFrame(() => {
+      workspaceRenderFrame = null;
+      renderWorkspace();
+      playFlipAnimation(before);
+      refreshContainerSelectOptions();
     });
-    playFlipAnimation(before, skipFlipKey);
+  }
+
+  function applyLayoutElementRect(item, domEl) {
+    const rect = getLayoutRect(item);
+    domEl.style.gridColumn = `${rect.x} / span ${rect.w}`;
+    domEl.style.gridRow = `${rect.y} / span ${rect.h}`;
+    domEl.classList.toggle(`w-${rect.w}`, true);
+    Array.from(domEl.classList).forEach((name) => {
+      if (/^[wh]-\d+$/.test(name) && name !== `w-${rect.w}` && name !== `h-${rect.h}`) domEl.classList.remove(name);
+    });
+    domEl.classList.add(`w-${rect.w}`, `h-${rect.h}`);
+    const sizeLabel = domEl.querySelector("[data-size-label]");
+    if (sizeLabel) sizeLabel.textContent = `${rect.w}×${rect.h}`;
+  }
+
+  function syncGridCoordsWithFlip(skipFlipKey = null) {
+    if (gridSyncFrame) return;
+    const before = capturePositions();
+    gridSyncFrame = requestAnimationFrame(() => {
+      gridSyncFrame = null;
+      state.layout.forEach((item) => {
+        const domEl = document.querySelector(`[data-item-id="${item.id}"]`);
+        if (domEl) applyLayoutElementRect(item, domEl);
+      });
+      playFlipAnimation(before, skipFlipKey);
+    });
+  }
+
+  function measureGridTracks(gridEl) {
+    const style = getComputedStyle(gridEl);
+    const bounds = gridEl.getBoundingClientRect();
+    const columnTracks = style.gridTemplateColumns.split(/\s+/).filter((value) => value.endsWith("px"));
+    const columns = Math.max(1, columnTracks.length || (isMobileLayout() ? MOBILE_GRID_COLS : GRID_COLS));
+    const columnGap = parseFloat(style.columnGap) || 0;
+    const rowGap = parseFloat(style.rowGap) || 0;
+    const columnWidth = parseFloat(columnTracks[0]) || (bounds.width - columnGap * (columns - 1)) / columns;
+    let rowHeight = parseFloat(style.gridAutoRows);
+    if (!Number.isFinite(rowHeight) || rowHeight <= 0) {
+      const first = gridEl.querySelector("[data-item-id]");
+      rowHeight = first ? first.getBoundingClientRect().height : 132;
+    }
+    return { bounds, columns, columnWidth, columnGap, rowHeight, rowGap };
   }
 
   /* =========================================================
@@ -906,14 +1094,11 @@
     }
 
     function pointerToGridCoord(gridEl, clientX, clientY) {
-      const rect = gridEl.getBoundingClientRect();
-      const gap = parseFloat(getComputedStyle(gridEl).gap) || 18;
-      const colWidth = (rect.width - gap * (GRID_COLS - 1)) / GRID_COLS;
-      const rowHeight = 132;
-      const relX = Math.max(0, clientX - rect.left);
-      const relY = Math.max(0, clientY - rect.top);
-      const col = Math.max(1, Math.min(GRID_COLS, Math.floor(relX / (colWidth + gap)) + 1));
-      const row = Math.max(1, Math.floor(relY / (rowHeight + gap)) + 1);
+      const tracks = measureGridTracks(gridEl);
+      const relX = Math.max(0, clientX - tracks.bounds.left);
+      const relY = Math.max(0, clientY - tracks.bounds.top);
+      const col = Math.max(1, Math.min(tracks.columns, Math.floor(relX / (tracks.columnWidth + tracks.columnGap)) + 1));
+      const row = Math.max(1, Math.floor(relY / (tracks.rowHeight + tracks.rowGap)) + 1);
       return { col, row };
     }
 
@@ -1201,7 +1386,7 @@
         // 3c. 计算鼠标指向的 2D 棋盘坐标 (targetX, targetY) 并显示实时落点光影框
         if (pointerDrag.kind === "layout-item" && pointerDrag.layoutId) {
           const { col, row } = pointerToGridCoord(gridEl, e.clientX, e.clientY);
-          const targetX = Math.max(1, Math.min(GRID_COLS - pointerDrag.w + 1, col - pointerDrag.grabOffsetCols));
+          const targetX = Math.max(1, Math.min((isMobileLayout() ? MOBILE_GRID_COLS : GRID_COLS) - pointerDrag.w + 1, col - pointerDrag.grabOffsetCols));
           const targetY = Math.max(1, row - pointerDrag.grabOffsetRows);
 
           updateSlotIndicator(targetX, targetY, pointerDrag.w, pointerDrag.h, true);
@@ -1246,7 +1431,18 @@
       document.body.classList.remove("is-pointer-dragging");
       hideTrashDock();
 
-      if (!p.started) return;
+      if (!p.started) {
+        suppressNextClick = false;
+        return;
+      }
+      if (!commitDrop) {
+        restoreFromSnapshot(p.baseSnapshot);
+        suppressNextClick = false;
+        if (p.avatarEl) p.avatarEl.remove();
+        if (p.sourceEl) p.sourceEl.classList.remove("is-being-dragged-source");
+        syncGridCoordsWithFlip();
+        return;
+      }
 
       // 情况 1：松手在底部回收站上 -> 执行删除
       if (commitDrop && isOverTrashDock(p.clientX, p.clientY)) {
@@ -1293,7 +1489,7 @@
       const gridEl = document.querySelector(".atomic-grid");
       if (commitDrop && gridEl && p.kind === "layout-item" && p.layoutId) {
         const { col, row } = pointerToGridCoord(gridEl, p.clientX, p.clientY);
-        const targetX = Math.max(1, Math.min(GRID_COLS - p.w + 1, col - p.grabOffsetCols));
+        const targetX = Math.max(1, Math.min((isMobileLayout() ? MOBILE_GRID_COLS : GRID_COLS) - p.w + 1, col - p.grabOffsetCols));
         const targetY = Math.max(1, row - p.grabOffsetRows);
         if (projectDragToCoord(p.layoutId, targetX, targetY, p.baseSnapshot)) {
           syncGridCoordsWithFlip(`layout-${p.layoutId}`);
@@ -1301,7 +1497,7 @@
         saveState();
       }
 
-      if (p.avatarEl && p.sourceEl && document.body.contains(p.sourceEl)) {
+      if (p.avatarEl && p.sourceEl && document.body.contains(p.sourceEl) && !prefersReducedMotion()) {
         const destRect = p.sourceEl.getBoundingClientRect();
         const anim = p.avatarEl.animate(
           [
@@ -1369,18 +1565,26 @@
     app.containerId = "desktop";
     let bareItem = state.layout.find((x) => x.kind === "app" && x.appId === appId);
     if (!bareItem) {
-      const spot =
-        targetX && targetY && isAreaFree(state.layout, targetX, targetY, 1, 1)
-          ? { x: targetX, y: targetY }
-          : findFirstFreeSpot(state.layout, 1, 1, null, targetY || 1);
+      const useMobile = isMobileLayout();
+      const targetSpot = targetX && targetY && isAreaFree(state.layout, targetX, targetY, 1, 1, null, useMobile)
+        ? { x: targetX, y: targetY }
+        : findFirstFreeSpot(state.layout, 1, 1, null, targetY || 1, useMobile);
+      const otherSpot = findFirstFreeSpot(state.layout, 1, 1, null, 1, !useMobile) || { x: 1, y: 1 };
+      const spot = targetSpot || otherSpot;
       bareItem = {
         id: "bare-" + appId + "-" + Date.now(),
         kind: "app",
         appId: appId,
-        x: spot.x,
-        y: spot.y,
+        x: useMobile ? otherSpot.x : spot.x,
+        y: useMobile ? otherSpot.y : spot.y,
         w: 1,
-        h: 1
+        h: 1,
+        mobile: {
+          x: useMobile ? spot.x : otherSpot.x,
+          y: useMobile ? spot.y : otherSpot.y,
+          w: 1,
+          h: 1
+        }
       };
       state.layout.push(bareItem);
     }
@@ -1428,18 +1632,29 @@
   let wallpaperAnimation = null;
   let wallpaperVideoEl = null;
   let wallpaperResizeHandler = null;
+  let wallpaperDraw = null;
+  let wallpaperLastFrame = 0;
+
+  function pauseDynamicWallpaper() {
+    if (wallpaperAnimation) cancelAnimationFrame(wallpaperAnimation);
+    wallpaperAnimation = null;
+    if (wallpaperVideoEl) wallpaperVideoEl.pause();
+  }
+
+  function resumeDynamicWallpaper() {
+    if (document.hidden || prefersReducedMotion()) return;
+    if (wallpaperDraw && !wallpaperAnimation) wallpaperAnimation = requestAnimationFrame(wallpaperDraw);
+    if (wallpaperVideoEl) wallpaperVideoEl.play().catch(showStaticWallpaperFallback);
+  }
 
   function stopDynamicWallpaper() {
-    if (wallpaperAnimation) {
-      cancelAnimationFrame(wallpaperAnimation);
-      wallpaperAnimation = null;
-    }
+    pauseDynamicWallpaper();
+    wallpaperDraw = null;
     if (wallpaperResizeHandler) {
       window.removeEventListener("resize", wallpaperResizeHandler);
       wallpaperResizeHandler = null;
     }
     if (wallpaperVideoEl) {
-      wallpaperVideoEl.pause();
       wallpaperVideoEl.remove();
       wallpaperVideoEl = null;
     }
@@ -1449,25 +1664,76 @@
     if (stage) stage.classList.remove("has-dynamic");
   }
 
-  function prefersReducedMotion() {
-    return Boolean(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  function showStaticWallpaperFallback() {
+    const stage = document.getElementById("wallpaperStage");
+    const photoLayer = document.getElementById("wallpaperPhoto");
+    if (!stage || !photoLayer) return;
+    stopDynamicWallpaper();
+    const pack = (window.REX_THEME_PACKS || []).find((item) => item.id === state.profile.themePack);
+    const wallpaper = pack && pack.wallpaper;
+    stage.dataset.scene = "scene-aurora";
+    const fallback = wallpaper && (wallpaper.fallback || (wallpaper.type === "gradient" && wallpaper.value));
+    photoLayer.style.backgroundImage = fallback || "none";
+    stage.classList.toggle("has-photo", Boolean(fallback));
   }
+
+  function prefersReducedMotion() {
+    return reducedMotionQuery.matches;
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) pauseDynamicWallpaper();
+    else resumeDynamicWallpaper();
+  });
 
   function startCanvasWallpaper(sceneName, dim) {
     const stage = document.getElementById("wallpaperStage");
     if (!stage) return;
-
     const canvas = document.createElement("canvas");
     canvas.id = "wallpaperCanvas";
     canvas.className = "wallpaper-canvas";
     stage.appendChild(canvas);
     stage.classList.add("has-dynamic");
-
     const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    if (!ctx) return showStaticWallpaperFallback();
+
+    const energySaver = Boolean((navigator.connection && navigator.connection.saveData) || (navigator.deviceMemory && navigator.deviceMemory <= 4));
+    const frameInterval = 1000 / (energySaver ? 15 : 30);
+    const dpr = energySaver ? 1 : Math.min(window.devicePixelRatio || 1, 1.5);
     let width = 1;
     let height = 1;
+    let gradients = {};
+    const stars = Array.from({ length: energySaver ? 70 : 150 }, () => ({
+      x: Math.random(), y: Math.random(), r: 0.4 + Math.random() * 1.3,
+      speed: 0.004 + Math.random() * 0.012, phase: Math.random() * Math.PI * 2
+    }));
+    const blobs = [
+      { cx: 0.25, cy: 0.3, color: "251,191,36", phase: 0 },
+      { cx: 0.75, cy: 0.65, color: "249,115,22", phase: 2.1 },
+      { cx: 0.55, cy: 0.2, color: "124,45,18", phase: 4.2 }
+    ];
+
+    function rebuildGradients() {
+      gradients = { bands: [] };
+      gradients.glow = ctx.createRadialGradient(width * 0.7, height * 0.25, 0, width * 0.7, height * 0.25, Math.max(width, height) * 0.7);
+      gradients.glow.addColorStop(0, "rgba(129,140,248,0.18)");
+      gradients.glow.addColorStop(1, "rgba(5,8,20,0)");
+      gradients.meshBase = ctx.createLinearGradient(0, 0, width, height);
+      gradients.meshBase.addColorStop(0, "#1c1917");
+      gradients.meshBase.addColorStop(1, "#0c0a1a");
+      gradients.sky = ctx.createLinearGradient(0, 0, 0, height);
+      gradients.sky.addColorStop(0, "#060b1a");
+      gradients.sky.addColorStop(0.55, "#0b1b33");
+      gradients.sky.addColorStop(1, "#0a2f45");
+      for (let i = 0; i < 3; i += 1) {
+        const band = ctx.createLinearGradient(0, height * (0.2 + i * 0.18), width, height * (0.5 + i * 0.18));
+        band.addColorStop(0, "rgba(16,185,129,0)");
+        band.addColorStop(0.45, `rgba(56,189,248,${0.12 - i * 0.025})`);
+        band.addColorStop(0.7, `rgba(168,85,247,${0.14 - i * 0.025})`);
+        band.addColorStop(1, "rgba(16,185,129,0)");
+        gradients.bands.push(band);
+      }
+    }
 
     const resize = () => {
       width = Math.max(1, stage.clientWidth);
@@ -1477,102 +1743,71 @@
       canvas.style.width = width + "px";
       canvas.style.height = height + "px";
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      rebuildGradients();
     };
     resize();
     wallpaperResizeHandler = resize;
     window.addEventListener("resize", resize);
-
-    const stars = Array.from({ length: 150 }, () => ({
-      x: Math.random(),
-      y: Math.random(),
-      r: 0.4 + Math.random() * 1.3,
-      speed: 0.004 + Math.random() * 0.012,
-      phase: Math.random() * Math.PI * 2
-    }));
-
     const started = performance.now();
-    const draw = (now) => {
-      wallpaperAnimation = requestAnimationFrame(draw);
-      if (document.hidden) return;
+    wallpaperLastFrame = 0;
 
+    wallpaperDraw = (now) => {
+      wallpaperAnimation = null;
+      if (document.hidden || prefersReducedMotion()) return;
+      if (now - wallpaperLastFrame < frameInterval) {
+        wallpaperAnimation = requestAnimationFrame(wallpaperDraw);
+        return;
+      }
+      wallpaperLastFrame = now;
       const t = (now - started) / 1000;
-      const w = width;
-      const h = height;
-
       if (sceneName === "starfield") {
         ctx.fillStyle = "#050814";
-        ctx.fillRect(0, 0, w, h);
-
-        const glow = ctx.createRadialGradient(w * 0.7, h * 0.25, 0, w * 0.7, h * 0.25, Math.max(w, h) * 0.7);
-        glow.addColorStop(0, "rgba(129,140,248,0.18)");
-        glow.addColorStop(1, "rgba(5,8,20,0)");
-        ctx.fillStyle = glow;
-        ctx.fillRect(0, 0, w, h);
-
+        ctx.fillRect(0, 0, width, height);
+        ctx.fillStyle = gradients.glow;
+        ctx.fillRect(0, 0, width, height);
         stars.forEach((star) => {
           const y = (star.y + t * star.speed) % 1;
           const alpha = 0.3 + 0.7 * Math.abs(Math.sin(t * 0.5 + star.phase));
           ctx.beginPath();
-          ctx.arc(star.x * w, y * h, star.r, 0, Math.PI * 2);
+          ctx.arc(star.x * width, y * height, star.r, 0, Math.PI * 2);
           ctx.fillStyle = `rgba(226,232,240,${alpha * 0.8})`;
           ctx.fill();
         });
       } else if (sceneName === "mesh") {
-        const base = ctx.createLinearGradient(0, 0, w, h);
-        base.addColorStop(0, "#1c1917");
-        base.addColorStop(1, "#0c0a1a");
-        ctx.fillStyle = base;
-        ctx.fillRect(0, 0, w, h);
-
-        const blobs = [
-          { cx: 0.25, cy: 0.3, color: "251,191,36", phase: 0 },
-          { cx: 0.75, cy: 0.65, color: "249,115,22", phase: 2.1 },
-          { cx: 0.55, cy: 0.2, color: "124,45,18", phase: 4.2 }
-        ];
+        ctx.fillStyle = gradients.meshBase;
+        ctx.fillRect(0, 0, width, height);
         blobs.forEach((blob) => {
-          const x = (blob.cx + Math.sin(t * 0.08 + blob.phase) * 0.08) * w;
-          const y = (blob.cy + Math.cos(t * 0.06 + blob.phase) * 0.08) * h;
-          const radius = Math.max(w, h) * 0.45;
-          const gradient = ctx.createRadialGradient(x, y, 0, x, y, radius);
+          const x = (blob.cx + Math.sin(t * 0.08 + blob.phase) * 0.08) * width;
+          const y = (blob.cy + Math.cos(t * 0.06 + blob.phase) * 0.08) * height;
+          const gradient = ctx.createRadialGradient(x, y, 0, x, y, Math.max(width, height) * 0.45);
           gradient.addColorStop(0, `rgba(${blob.color},0.3)`);
           gradient.addColorStop(1, `rgba(${blob.color},0)`);
           ctx.fillStyle = gradient;
-          ctx.fillRect(0, 0, w, h);
+          ctx.fillRect(0, 0, width, height);
         });
       } else {
-        const sky = ctx.createLinearGradient(0, 0, 0, h);
-        sky.addColorStop(0, "#060b1a");
-        sky.addColorStop(0.55, "#0b1b33");
-        sky.addColorStop(1, "#0a2f45");
-        ctx.fillStyle = sky;
-        ctx.fillRect(0, 0, w, h);
-
+        ctx.fillStyle = gradients.sky;
+        ctx.fillRect(0, 0, width, height);
         for (let i = 0; i < 3; i += 1) {
-          const band = ctx.createLinearGradient(0, h * (0.2 + i * 0.18), w, h * (0.5 + i * 0.18));
-          band.addColorStop(0, "rgba(16,185,129,0)");
-          band.addColorStop(0.45, `rgba(56,189,248,${0.12 - i * 0.025})`);
-          band.addColorStop(0.7, `rgba(168,85,247,${0.14 - i * 0.025})`);
-          band.addColorStop(1, "rgba(16,185,129,0)");
-          ctx.fillStyle = band;
+          ctx.fillStyle = gradients.bands[i];
           ctx.beginPath();
-          ctx.moveTo(0, h);
-          for (let x = 0; x <= w; x += 14) {
-            const y = h * (0.5 + i * 0.07) + Math.sin(x * 0.004 + t * (0.16 + i * 0.04)) * (26 + i * 9);
+          ctx.moveTo(0, height);
+          for (let x = 0; x <= width; x += 14) {
+            const y = height * (0.5 + i * 0.07) + Math.sin(x * 0.004 + t * (0.16 + i * 0.04)) * (26 + i * 9);
             ctx.lineTo(x, y);
           }
-          ctx.lineTo(w, h);
+          ctx.lineTo(width, height);
           ctx.closePath();
           ctx.fill();
         }
       }
-
       if (dim > 0) {
         ctx.fillStyle = `rgba(2,6,20,${dim})`;
-        ctx.fillRect(0, 0, w, h);
+        ctx.fillRect(0, 0, width, height);
       }
+      wallpaperAnimation = requestAnimationFrame(wallpaperDraw);
     };
-
-    wallpaperAnimation = requestAnimationFrame(draw);
+    resumeDynamicWallpaper();
   }
 
   function startVideoWallpaper(url, poster, dim) {
@@ -1586,14 +1821,15 @@
     video.muted = true;
     video.loop = true;
     video.playsInline = true;
-    video.preload = "auto";
+    video.preload = "metadata";
     if (poster) video.poster = poster;
     video.src = url;
     if (dim > 0) video.style.filter = `brightness(${Math.max(0.4, 1 - dim)})`;
+    video.addEventListener("error", showStaticWallpaperFallback, { once: true });
     stage.appendChild(video);
     stage.classList.add("has-dynamic");
     wallpaperVideoEl = video;
-    video.play().catch(() => {});
+    if (!document.hidden) video.play().catch(showStaticWallpaperFallback);
   }
 
   function applyWallpaper() {
@@ -1703,6 +1939,47 @@
     return (lib[key] && lib[key].svg) || (lib.globe && lib.globe.svg) || "";
   }
 
+  function clearLogoCaches() {
+    logoCacheGeneration += 1;
+    logoStatusCache.clear();
+    logoProbeCache.clear();
+  }
+
+  function probeAppLogo(app) {
+    const cached = logoStatusCache.get(app.id);
+    if (cached !== undefined) return Promise.resolve(cached);
+    if (logoProbeCache.has(app.id)) return logoProbeCache.get(app.id);
+    const generation = logoCacheGeneration;
+    const candidates = deriveCandidateLogos(app);
+    if (!candidates.length) {
+      logoStatusCache.set(app.id, false);
+      return Promise.resolve(false);
+    }
+    const promise = new Promise((resolve) => {
+      const image = new Image();
+      let index = 0;
+      function finish(value) {
+        if (generation === logoCacheGeneration) logoStatusCache.set(app.id, value);
+        resolve(value);
+      }
+      function tryNext() {
+        if (index >= candidates.length) return finish(false);
+        image.src = candidates[index++];
+      }
+      image.onload = () => {
+        if (image.naturalWidth >= 12) finish(image.src);
+        else tryNext();
+      };
+      image.onerror = tryNext;
+      tryNext();
+    });
+    logoProbeCache.set(app.id, promise);
+    promise.finally(() => {
+      if (logoProbeCache.get(app.id) === promise) logoProbeCache.delete(app.id);
+    });
+    return promise;
+  }
+
   function createAppUnit(app, opts = {}) {
     const a = document.createElement("a");
     a.className = "app-unit" + (recentlyDroppedAppId === app.id ? " just-dropped" : "");
@@ -1742,33 +2019,13 @@
 
     a.querySelectorAll("img, svg").forEach((ch) => ch.setAttribute("draggable", "false"));
 
-    // 如果尚未缓存过该应用的网站 Logo，则探测一次并写入缓存
     if (cachedLogo === undefined) {
-      const candidates = deriveCandidateLogos(app);
-      if (candidates.length === 0) {
-        logoStatusCache.set(app.id, false);
-      } else {
-        const imgEl = a.querySelector(".app-real-logo");
-        const squircleEl = a.querySelector(".app-squircle");
-        let idx = 0;
-        const tryNext = () => {
-          if (idx >= candidates.length) {
-            logoStatusCache.set(app.id, false);
-            return;
-          }
-          imgEl.src = candidates[idx++];
-        };
-        imgEl.onload = () => {
-          if (imgEl.naturalWidth >= 12) {
-            logoStatusCache.set(app.id, imgEl.src);
-            squircleEl.classList.add("has-real-logo");
-          } else {
-            tryNext();
-          }
-        };
-        imgEl.onerror = tryNext;
-        tryNext();
-      }
+      probeAppLogo(app).then((logo) => {
+        const safeLogo = typeof logo === "string" ? StudioloCore.normalizeUrl(logo) : null;
+        if (!safeLogo || !a.isConnected) return;
+        a.querySelector(".app-real-logo").src = safeLogo;
+        a.querySelector(".app-squircle").classList.add("has-real-logo");
+      });
     }
 
     a.addEventListener("click", (e) => {
@@ -1816,7 +2073,8 @@
   }
 
   function createMoreOverflowUnit(widgetItem, hiddenApps, totalCount) {
-    const btn = document.createElement("div");
+    const btn = document.createElement("button");
+    btn.type = "button";
     btn.className = "app-unit";
     btn.title = `还有 ${hiddenApps.length} 个应用，点击展开全部 ${totalCount} 项`;
 
@@ -1850,13 +2108,37 @@
    * 8. 2D 绝对坐标网格元素绑定
    * ========================================================= */
   function attachLayoutDragEvents(el, layoutItem) {
-    const w = layoutItem.kind === "app" ? 1 : layoutItem.w || 4;
-    const h = layoutItem.kind === "app" ? 1 : layoutItem.h || 2;
-    el.style.gridColumn = `${layoutItem.x || 1} / span ${w}`;
-    el.style.gridRow = `${layoutItem.y || 1} / span ${h}`;
-
+    const rect = getLayoutRect(layoutItem);
+    applyLayoutElementRect(layoutItem, el);
     el.dataset.itemId = layoutItem.id;
     el.dataset.flipKey = `layout-${layoutItem.id}`;
+    el.tabIndex = 0;
+    el.setAttribute("role", "group");
+    el.setAttribute("aria-label", `${layoutItem.kind === "app" ? "应用" : "组件"}，编辑模式下方向键移动${layoutItem.kind === "widget" ? "，Shift 加方向键缩放" : ""}`);
+    el.setAttribute("aria-keyshortcuts", "ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight");
+
+    el.addEventListener("keydown", (event) => {
+      if (!editMode || !event.key.startsWith("Arrow")) return;
+      if (event.target.closest("input, textarea, select, [contenteditable=true]")) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const current = getLayoutRect(layoutItem);
+      const delta = {
+        ArrowLeft: { x: -1, y: 0 },
+        ArrowRight: { x: 1, y: 0 },
+        ArrowUp: { x: 0, y: -1 },
+        ArrowDown: { x: 0, y: 1 }
+      }[event.key];
+      const next = Object.assign({}, current);
+      if (event.shiftKey && layoutItem.kind === "widget") {
+        next.w = Math.max(2, current.w + (event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0));
+        next.h = Math.max(1, Math.min(4, current.h + (event.key === "ArrowDown" ? 1 : event.key === "ArrowUp" ? -1 : 0)));
+      } else {
+        next.x += delta.x;
+        next.y += delta.y;
+      }
+      commitLayoutRect(layoutItem.id, next, { structure: event.shiftKey });
+    });
 
     el.addEventListener("pointerdown", (e) => {
       if (layoutItem.kind === "widget" && e.target.closest(".app-unit")) return;
@@ -1870,8 +2152,8 @@
         layoutId: layoutItem.id,
         isBareApp: layoutItem.kind === "app",
         appId: layoutItem.kind === "app" ? layoutItem.appId : null,
-        w,
-        h,
+        w: rect.w,
+        h: rect.h,
         title: itemTitle,
         sourceEl: el
       });
@@ -1882,85 +2164,91 @@
    * 9. 可复用组件工具栏 & 防重叠渲染器
    * ========================================================= */
   function buildWidgetEditControls(shellEl, widgetItem) {
+    const initialRect = getLayoutRect(widgetItem);
     const bar = document.createElement("div");
     bar.className = "widget-edit-toolbar";
     bar.innerHTML = `
-      <span style="font-size:10px;color:#fde047;font-weight:700;padding:0 3px">${widgetItem.w}×${widgetItem.h}</span>
-      <button type="button" class="tiny-btn" data-w-delta="-1" title="缩小列宽">W-</button>
-      <button type="button" class="tiny-btn" data-w-delta="1" title="增加列宽">W+</button>
-      <button type="button" class="tiny-btn" data-h-delta="-1" title="缩小行高">H-</button>
-      <button type="button" class="tiny-btn" data-h-delta="1" title="增加行高">H+</button>
-      <button type="button" class="tiny-btn" data-open-wcfg style="background:var(--theme-accent);color:#0f172a;font-weight:700">⚙</button>
+      <span data-size-label style="font-size:10px;color:#fde047;font-weight:700;padding:0 3px">${initialRect.w}×${initialRect.h}</span>
+      <button type="button" class="tiny-btn" data-w-delta="-1" title="缩小列宽" aria-label="缩小列宽">W-</button>
+      <button type="button" class="tiny-btn" data-w-delta="1" title="增加列宽" aria-label="增加列宽">W+</button>
+      <button type="button" class="tiny-btn" data-h-delta="-1" title="缩小行高" aria-label="缩小行高">H-</button>
+      <button type="button" class="tiny-btn" data-h-delta="1" title="增加行高" aria-label="增加行高">H+</button>
+      <button type="button" class="tiny-btn" data-open-wcfg aria-label="配置组件" style="background:var(--theme-accent);color:#0f172a;font-weight:700">⚙</button>
     `;
 
-    bar.querySelectorAll("[data-w-delta]").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const d = Number(btn.dataset.wDelta);
-        const nextW = Math.max(2, Math.min(12, (widgetItem.w || 4) + d));
-        widgetItem.w = nextW;
-        if (widgetItem.x + widgetItem.w - 1 > GRID_COLS) {
-          widgetItem.x = Math.max(1, GRID_COLS - widgetItem.w + 1);
-        }
-        saveState();
-        renderWithFlip();
+    bar.querySelectorAll("[data-w-delta], [data-h-delta]").forEach((btn) => {
+      btn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const current = getLayoutRect(widgetItem);
+        const columns = isMobileLayout() ? MOBILE_GRID_COLS : GRID_COLS;
+        const next = Object.assign({}, current, {
+          w: Math.max(2, Math.min(columns, current.w + Number(btn.dataset.wDelta || 0))),
+          h: Math.max(1, Math.min(4, current.h + Number(btn.dataset.hDelta || 0)))
+        });
+        commitLayoutRect(widgetItem.id, next, { structure: true });
       });
     });
 
-    bar.querySelectorAll("[data-h-delta]").forEach((btn) => {
-      btn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const d = Number(btn.dataset.hDelta);
-        widgetItem.h = Math.max(1, Math.min(4, (widgetItem.h || 2) + d));
-        saveState();
-        renderWithFlip();
-      });
-    });
-
-    bar.querySelector("[data-open-wcfg]").addEventListener("click", (e) => {
-      e.stopPropagation();
+    bar.querySelector("[data-open-wcfg]").addEventListener("click", (event) => {
+      event.stopPropagation();
       window.openWidgetConfigModal(widgetItem.id);
     });
-
     shellEl.appendChild(bar);
 
-    const corner = document.createElement("div");
+    const corner = document.createElement("button");
+    corner.type = "button";
     corner.className = "widget-resize-corner";
-    corner.title = "按住拖拽可直接自由调整组件长宽";
+    corner.title = "按住拖拽调整组件长宽；也可用 Shift 加方向键";
+    corner.setAttribute("aria-label", "拖拽调整组件长宽");
     corner.textContent = "⤡";
 
-    corner.addEventListener("pointerdown", (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      const startX = e.clientX;
-      const startY = e.clientY;
-      const startW = widgetItem.w || 4;
-      const startH = widgetItem.h || 2;
-      const gridEl = shellEl.parentElement;
-      const colStep = gridEl ? gridEl.clientWidth / 12 : 110;
-      const rowStep = 140;
+    corner.addEventListener("pointerdown", (event) => {
+      event.stopPropagation();
+      event.preventDefault();
+      const startX = event.clientX;
+      const startY = event.clientY;
+      const startRect = getLayoutRect(widgetItem);
+      const baseSnapshot = captureLayoutSnapshot();
+      const tracks = measureGridTracks(shellEl.parentElement);
+      const colStep = tracks.columnWidth + tracks.columnGap;
+      const rowStep = tracks.rowHeight + tracks.rowGap;
+      let latest = { clientX: startX, clientY: startY };
+      let resizeFrame = null;
+      let changed = false;
 
-      function onMove(ev) {
-        const deltaCols = Math.round((ev.clientX - startX) / colStep);
-        const deltaRows = Math.round((ev.clientY - startY) / rowStep);
-        const maxAllowedW = GRID_COLS - (widgetItem.x || 1) + 1;
-        const nextW = Math.max(2, Math.min(maxAllowedW, startW + deltaCols));
-        const nextH = Math.max(1, Math.min(4, startH + deltaRows));
-        if (nextW !== widgetItem.w || nextH !== widgetItem.h) {
-          widgetItem.w = nextW;
-          widgetItem.h = nextH;
-          saveState();
-          renderWithFlip();
-        }
+      function applyResize() {
+        resizeFrame = null;
+        const next = Object.assign({}, startRect, {
+          w: Math.max(2, Math.min(tracks.columns, startRect.w + Math.round((latest.clientX - startX) / colStep))),
+          h: Math.max(1, Math.min(4, startRect.h + Math.round((latest.clientY - startY) / rowStep)))
+        });
+        changed = commitLayoutRect(widgetItem.id, next, { baseSnapshot, persist: false }) || changed;
       }
-
-      function onUp() {
+      function onMove(moveEvent) {
+        latest = { clientX: moveEvent.clientX, clientY: moveEvent.clientY };
+        if (!resizeFrame) resizeFrame = requestAnimationFrame(applyResize);
+      }
+      function finish(commit) {
+        if (resizeFrame) cancelAnimationFrame(resizeFrame);
+        resizeFrame = null;
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
+        window.removeEventListener("pointercancel", onCancel);
+        if (commit) {
+          applyResize();
+          if (changed) saveState();
+          scheduleRenderWithFlip();
+        } else {
+          restoreFromSnapshot(baseSnapshot);
+          suppressNextClick = false;
+          syncGridCoordsWithFlip();
+        }
       }
-
+      function onUp() { finish(true); }
+      function onCancel() { finish(false); }
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
+      window.addEventListener("pointercancel", onCancel);
     });
 
     shellEl.appendChild(corner);
@@ -2033,7 +2321,8 @@
     slotGrid.style.gridTemplateColumns = `repeat(${cols}, minmax(0, 1fr))`;
 
     if (allApps.length === 0) {
-      const emptyBtn = document.createElement("div");
+      const emptyBtn = document.createElement("button");
+      emptyBtn.type = "button";
       emptyBtn.className = "app-unit";
       emptyBtn.style.gridColumn = `span ${cols}`;
       emptyBtn.innerHTML = `
@@ -2244,7 +2533,7 @@
 
     const foot = document.createElement("div");
     foot.className = "widget-foot-metrics";
-    foot.innerHTML = `<span>农历与节气同步</span><span>第 ${Math.ceil((today + firstDay) / 7)} 周</span>`;
+    foot.innerHTML = `<span>本机日历</span><span>${m + 1}月 · 共 ${totalDays} 天</span>`;
     shell.appendChild(foot);
 
     attachLayoutDragEvents(shell, widgetItem);
@@ -2302,13 +2591,14 @@
     const shell = document.createElement("section");
     shell.className = `widget-shell w-${w} h-${h}`;
     buildWidgetEditControls(shell, widgetItem);
+    const clockTitle = !cfg.title || cfg.title === "系统脉冲" ? "本机时间" : cfg.title;
+    const clockSubtitle = cfg.subtitle || (cfg.badge && cfg.badge !== "本地服务正常" ? cfg.badge : "本地时钟");
 
     const top = document.createElement("div");
     top.className = "widget-topbar";
     top.innerHTML = `
       <div class="widget-title-area">
-        <span class="live-dot"></span>
-        <span class="widget-title">${escapeHtml(cfg.title || "系统脉冲")}</span>
+        <span class="widget-title">${escapeHtml(clockTitle)}</span>
       </div>
       <div class="widget-actions">
         <button type="button" class="tiny-btn" data-cfg-btn>⚙</button>
@@ -2324,7 +2614,7 @@
     mid.style.cssText = "display:flex;align-items:baseline;justify-content:space-between;align-self:center";
     mid.innerHTML = `
       <div class="live-widget-clock" style="font-size:26px;font-weight:720;font-variant-numeric:tabular-nums">--:--</div>
-      <div style="font-size:11px;color:var(--text-secondary)">${escapeHtml(cfg.subtitle || cfg.badge || "在线")}</div>
+      <div style="font-size:11px;color:var(--text-secondary)">${escapeHtml(clockSubtitle)}</div>
     `;
     shell.appendChild(mid);
 
@@ -2439,13 +2729,14 @@
     openedFolderWidgetId = widgetId;
     const backdrop = document.getElementById("folderBackdrop");
     renderFolderModalContent(widgetId);
+    openModal(backdrop, { onEscape: closeFolderModal, onClose: () => { openedFolderWidgetId = null; } });
     backdrop.classList.add("open");
   }
 
   function closeFolderModal() {
-    openedFolderWidgetId = null;
     const backdrop = document.getElementById("folderBackdrop");
-    if (backdrop) backdrop.classList.remove("open");
+    if (backdrop) closeModal(backdrop);
+    openedFolderWidgetId = null;
   }
 
   function initFolderAutoClose() {
@@ -2526,7 +2817,8 @@
         label.textContent = token.label;
         field.appendChild(input);
         field.appendChild(label);
-        return field;
+        associateFormLabels(field);
+      return field;
       }
 
       const label = document.createElement("label");
@@ -2578,6 +2870,7 @@
         updateToken(token, token.type === "range" ? Number(input.value) : input.value);
       });
       field.appendChild(input);
+      associateFormLabels(field);
       return field;
     }
 
@@ -2859,22 +3152,18 @@
         `;
       }
 
-      cfgBackdrop.hidden = false;
+      associateFormLabels(dynamicBox);
+      openModal(cfgBackdrop, { initialFocus: document.getElementById("wcfgTitleInput") });
     };
 
-    document.getElementById("closeWcfgModalBtn").addEventListener("click", () => (cfgBackdrop.hidden = true));
+    document.getElementById("closeWcfgModalBtn").addEventListener("click", () => closeModal(cfgBackdrop));
     cfgBackdrop.addEventListener("click", (e) => {
-      if (e.target === cfgBackdrop) cfgBackdrop.hidden = true;
+      if (e.target === cfgBackdrop) closeModal(cfgBackdrop);
     });
 
     document.getElementById("saveWcfgBtn").addEventListener("click", () => {
       const item = state.layout.find((x) => x.id === editingWidgetId);
       if (!item) return;
-      item.w = Number(document.getElementById("wcfgWidthSelect").value) || 4;
-      item.h = Number(document.getElementById("wcfgHeightSelect").value) || 2;
-      if (item.x + item.w - 1 > GRID_COLS) {
-        item.x = Math.max(1, GRID_COLS - item.w + 1);
-      }
       item.config = item.config || {};
       item.config.title = document.getElementById("wcfgTitleInput").value.trim() || "未命名组件";
       item.config.badge = document.getElementById("wcfgBadgeInput").value.trim();
@@ -2908,9 +3197,14 @@
         item.config.subtitle = getVal("wcfgSubtitle");
       }
 
+      const currentRect = getLayoutRect(item);
+      commitLayoutRect(item.id, Object.assign({}, currentRect, {
+        w: Number(document.getElementById("wcfgWidthSelect").value) || currentRect.w,
+        h: Number(document.getElementById("wcfgHeightSelect").value) || currentRect.h
+      }), { persist: false });
       saveState();
       renderWithFlip();
-      cfgBackdrop.hidden = true;
+      closeModal(cfgBackdrop);
     });
 
     document.getElementById("deleteWidgetBtn").addEventListener("click", () => {
@@ -2946,14 +3240,14 @@
             if (!target) return;
             target.containerId = destination;
             if (destination === "desktop" && !draft.layout.some((item) => item.kind === "app" && item.appId === app.id)) {
-              const spot = findFirstFreeSpot(draft.layout, 1, 1, null, 1);
+              const spot = findFirstFreeSpot(draft.layout, 1, 1, null, 1, false) || { x: 1, y: 1 };
               draft.layout.push({ id: `bare-${app.id}-${Date.now()}`, kind: "app", appId: app.id, x: spot.x, y: spot.y, w: 1, h: 1 });
             }
           });
         }
         draft.layout = draft.layout.filter((item) => item.id !== widget.id);
       });
-      cfgBackdrop.hidden = true;
+      closeModal(cfgBackdrop);
       showToast(destination === "cascade" ? "组件及其中应用已删除" : "组件已删除", true);
     });
 
@@ -2973,7 +3267,9 @@
       `;
       card.querySelector("button").addEventListener("click", () => {
         const newId = `${typeKey}-${Date.now()}`;
-        const spot = findFirstFreeSpot(state.layout, meta.defaultW, meta.defaultH, null, 1);
+        const spot = findFirstFreeSpot(state.layout, meta.defaultW, meta.defaultH, null, 1, false) || { x: 1, y: 1 };
+        const mobileW = Math.min(MOBILE_GRID_COLS, meta.defaultW);
+        const mobileSpot = findFirstFreeSpot(state.layout, mobileW, meta.defaultH, null, 1, true) || { x: 1, y: 1 };
         const newWidget = {
           id: newId,
           kind: "widget",
@@ -2982,22 +3278,23 @@
           y: spot.y,
           w: meta.defaultW,
           h: meta.defaultH,
+          mobile: { x: mobileSpot.x, y: mobileSpot.y, w: mobileW, h: meta.defaultH },
           config: JSON.parse(JSON.stringify(meta.defaultConfig))
         };
         state.layout.push(newWidget);
         saveState();
         renderWithFlip();
-        storeBackdrop.hidden = true;
+        closeModal(storeBackdrop);
         window.openWidgetConfigModal(newId);
       });
       catalogGrid.appendChild(card);
     });
 
-    window.openWidgetStoreModal = () => (storeBackdrop.hidden = false);
+    window.openWidgetStoreModal = () => openModal(storeBackdrop, { onEscape: () => closeModal(storeBackdrop) });
     document.getElementById("bannerAddWidgetBtn").addEventListener("click", window.openWidgetStoreModal);
-    document.getElementById("closeWidgetStoreBtn").addEventListener("click", () => (storeBackdrop.hidden = true));
+    document.getElementById("closeWidgetStoreBtn").addEventListener("click", () => closeModal(storeBackdrop));
     storeBackdrop.addEventListener("click", (e) => {
-      if (e.target === storeBackdrop) storeBackdrop.hidden = true;
+      if (e.target === storeBackdrop) closeModal(storeBackdrop);
     });
   }
 
@@ -3075,12 +3372,12 @@
       );
 
       document.getElementById("deleteAppBtn").style.visibility = app ? "visible" : "hidden";
-      backdrop.hidden = false;
+      openModal(backdrop, { initialFocus: document.getElementById("appNameInput") });
     };
 
-    document.getElementById("closeAppModalBtn").addEventListener("click", () => (backdrop.hidden = true));
+    document.getElementById("closeAppModalBtn").addEventListener("click", () => closeModal(backdrop));
     backdrop.addEventListener("click", (e) => {
-      if (e.target === backdrop) backdrop.hidden = true;
+      if (e.target === backdrop) closeModal(backdrop);
     });
 
     document.getElementById("saveAppBtn").addEventListener("click", () => {
@@ -3112,7 +3409,7 @@
 
       let targetId = editingAppId;
       if (editingAppId) {
-        logoStatusCache.delete(editingAppId);
+        clearLogoCaches();
         const target = state.apps.find((a) => a.id === editingAppId);
         if (target) {
           Object.assign(target, {
@@ -3153,7 +3450,8 @@
 
       const bareIdx = state.layout.findIndex((x) => x.kind === "app" && x.appId === targetId);
       if (wantBareDesktop && bareIdx === -1) {
-        const spot = findFirstFreeSpot(state.layout, 1, 1, null, 1);
+        const spot = findFirstFreeSpot(state.layout, 1, 1, null, 1, false) || { x: 1, y: 1 };
+        const mobileSpot = findFirstFreeSpot(state.layout, 1, 1, null, 1, true) || { x: 1, y: 1 };
         state.layout.push({
           id: "bare-" + Date.now(),
           kind: "app",
@@ -3161,7 +3459,8 @@
           x: spot.x,
           y: spot.y,
           w: 1,
-          h: 1
+          h: 1,
+          mobile: { x: mobileSpot.x, y: mobileSpot.y, w: 1, h: 1 }
         });
       } else if (!wantBareDesktop && bareIdx !== -1) {
         state.layout.splice(bareIdx, 1);
@@ -3170,7 +3469,7 @@
       saveState();
       renderWithFlip();
       if (openedFolderWidgetId) renderFolderModalContent(openedFolderWidgetId);
-      backdrop.hidden = true;
+      closeModal(backdrop);
     });
 
     document.getElementById("deleteAppBtn").addEventListener("click", () => {
@@ -3180,7 +3479,7 @@
       saveState();
       renderWithFlip();
       if (openedFolderWidgetId) renderFolderModalContent(openedFolderWidgetId);
-      backdrop.hidden = true;
+      closeModal(backdrop);
       showToast("应用已删除", true);
     });
   }
@@ -3240,94 +3539,101 @@
     const input = document.getElementById("omniInput");
     const drop = document.getElementById("omniDropdown");
     const engineBtn = document.getElementById("engineCycleBtn");
+    let activeIndex = 0;
 
     function refreshEngine() {
       const eng = SEARCH_ENGINES[state.profile.searchEngine] || SEARCH_ENGINES.google;
       engineBtn.textContent = `${eng.name} ▾`;
     }
-    refreshEngine();
+    function setOpen(open) {
+      drop.hidden = !open;
+      input.setAttribute("aria-expanded", String(open));
+      if (!open) input.removeAttribute("aria-activedescendant");
+    }
+    function setActive(index) {
+      const rows = Array.from(drop.querySelectorAll(".omni-row"));
+      if (!rows.length) return;
+      activeIndex = (index + rows.length) % rows.length;
+      rows.forEach((row, rowIndex) => {
+        const active = rowIndex === activeIndex;
+        row.classList.toggle("active", active);
+        row.setAttribute("aria-selected", String(active));
+      });
+      input.setAttribute("aria-activedescendant", rows[activeIndex].id);
+      rows[activeIndex].scrollIntoView({ block: "nearest" });
+    }
+    function renderResults() {
+      const query = input.value.trim();
+      const normalized = query.toLowerCase();
+      if (!normalized) {
+        setOpen(false);
+        return;
+      }
+      const matches = state.apps.filter((app) =>
+        `${app.name} ${app.desc} ${app.href} ${app.note || ""}`.toLowerCase().includes(normalized) && StudioloCore.normalizeUrl(app.href)
+      ).slice(0, 7);
+      const eng = SEARCH_ENGINES[state.profile.searchEngine] || SEARCH_ENGINES.google;
+      let html = "";
+      matches.forEach((app, index) => {
+        const safeBackground = StudioloCore.safeColor(app.color, "#2563eb");
+        html += `
+          <a id="omni-option-${index}" role="option" aria-selected="false" class="omni-row" href="${escapeHtml(StudioloCore.normalizeUrl(app.href))}" target="_blank" rel="noopener noreferrer">
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="width:32px;height:32px;border-radius:10px;background:${safeBackground};display:grid;place-items:center">
+                <div style="width:18px;height:18px">${getIconSvg(app.icon)}</div>
+              </div>
+              <div><div style="font-size:13.5px;font-weight:600">${escapeHtml(app.name)}</div><div style="font-size:11.5px;color:var(--text-secondary)">${escapeHtml(app.desc || app.href)}</div></div>
+            </div><span class="widget-tag">打开应用 ↵</span>
+          </a>`;
+      });
+      const webHref = eng.url + encodeURIComponent(query);
+      html += `
+        <a id="omni-option-${matches.length}" role="option" aria-selected="false" class="omni-row" href="${webHref}" target="_blank" rel="noopener noreferrer">
+          <div style="display:flex;align-items:center;gap:10px"><div style="width:32px;height:32px;border-radius:10px;background:rgba(255,255,255,0.18);display:grid;place-items:center"><div style="width:18px;height:18px">${getIconSvg("globe")}</div></div>
+          <div><div style="font-size:13.5px;font-weight:600">使用 ${eng.name} 搜索 “${escapeHtml(query)}”</div><div style="font-size:11.5px;color:var(--text-secondary)">跳转到外部网页搜索结果</div></div></div>
+          <span class="widget-tag">全网搜索 ↵</span>
+        </a>`;
+      drop.innerHTML = html;
+      setOpen(true);
+      setActive(0);
+    }
 
+    refreshEngine();
     engineBtn.addEventListener("click", () => {
       const keys = Object.keys(SEARCH_ENGINES);
       state.profile.searchEngine = keys[(keys.indexOf(state.profile.searchEngine) + 1) % keys.length];
       saveState();
       refreshEngine();
       input.focus();
+      renderResults();
     });
-
-    input.addEventListener("input", () => {
-      const q = input.value.trim().toLowerCase();
-      if (!q) {
-        drop.hidden = true;
-        return;
-      }
-      const matches = state.apps.filter((a) =>
-        `${a.name} ${a.desc} ${a.href} ${a.note || ""}`.toLowerCase().includes(q)
-      );
-      const eng = SEARCH_ENGINES[state.profile.searchEngine] || SEARCH_ENGINES.google;
-      let html = "";
-
-      matches.slice(0, 7).forEach((app, i) => {
-        const safeHref = StudioloCore.normalizeUrl(app.href);
-        if (!safeHref) return;
-        const safeBackground = StudioloCore.safeColor(app.color, "#2563eb");
-        html += `
-          <a class="omni-row ${i === 0 ? "active" : ""}" href="${escapeHtml(safeHref)}" target="_blank" rel="noopener noreferrer">
-            <div style="display:flex;align-items:center;gap:10px">
-              <div style="width:32px;height:32px;border-radius:10px;background:${safeBackground};display:grid;place-items:center">
-                <div style="width:18px;height:18px">${getIconSvg(app.icon)}</div>
-              </div>
-              <div>
-                <div style="font-size:13.5px;font-weight:600">${escapeHtml(app.name)}</div>
-                <div style="font-size:11.5px;color:var(--text-secondary)">${escapeHtml(app.desc || app.href)}</div>
-              </div>
-            </div>
-            <span class="widget-tag">打开应用 ↵</span>
-          </a>
-        `;
-      });
-
-      const webHref = eng.url + encodeURIComponent(input.value.trim());
-      html += `
-        <a class="omni-row ${matches.length === 0 ? "active" : ""}" href="${webHref}" target="_blank" rel="noopener">
-          <div style="display:flex;align-items:center;gap:10px">
-            <div style="width:32px;height:32px;border-radius:10px;background:rgba(255,255,255,0.18);display:grid;place-items:center">
-              <div style="width:18px;height:18px">${getIconSvg("globe")}</div>
-            </div>
-            <div>
-              <div style="font-size:13.5px;font-weight:600">使用 ${eng.name} 搜索 “${escapeHtml(input.value.trim())}”</div>
-              <div style="font-size:11.5px;color:var(--text-secondary)">跳转到外部网页搜索结果</div>
-            </div>
-          </div>
-          <span class="widget-tag">全网搜索 ↵</span>
-        </a>
-      `;
-
-      drop.innerHTML = html;
-      drop.hidden = false;
-    });
-
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        input.value = "";
-        drop.hidden = true;
-      } else if (e.key === "Enter") {
-        const first = drop.querySelector(".omni-row.active") || drop.querySelector(".omni-row");
-        if (first && !drop.hidden) {
-          e.preventDefault();
-          window.open(first.href, "_blank", "noopener");
-          drop.hidden = true;
+    input.addEventListener("input", renderResults);
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        if (drop.hidden) renderResults();
+        setActive(activeIndex + (event.key === "ArrowDown" ? 1 : -1));
+      } else if (event.key === "Escape") {
+        setOpen(false);
+      } else if (event.key === "Enter" && !drop.hidden) {
+        const active = drop.querySelector(".omni-row.active");
+        if (active) {
+          event.preventDefault();
+          window.open(active.href, "_blank", "noopener,noreferrer");
+          setOpen(false);
         }
       }
     });
-
-    document.addEventListener("click", (e) => {
-      if (!e.target.closest(".omni-container")) drop.hidden = true;
+    drop.addEventListener("mousemove", (event) => {
+      const row = event.target.closest(".omni-row");
+      if (row) setActive(Array.from(drop.children).indexOf(row));
     });
-
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "/" && !["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) {
-        e.preventDefault();
+    document.addEventListener("click", (event) => {
+      if (!event.target.closest(".omni-container")) setOpen(false);
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "/" && !["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) {
+        event.preventDefault();
         input.focus();
       }
     });
@@ -3370,8 +3676,10 @@
     function renderSwatches() {
       wpGrid.innerHTML = "";
       window.REX_WALLPAPERS.forEach((wp) => {
-        const d = document.createElement("div");
+        const d = document.createElement("button");
+        d.type = "button";
         d.className = `wp-swatch ${state.profile.wallpaper === wp.id && !state.profile.customWallpaperUrl ? "active" : ""}`;
+        d.setAttribute("aria-pressed", String(state.profile.wallpaper === wp.id && !state.profile.customWallpaperUrl));
         d.style.background = wp.preview;
         d.textContent = wp.name;
         d.addEventListener("click", () => {
@@ -3467,6 +3775,18 @@
     if (!backdrop) return;
     const tabs = Array.from(document.querySelectorAll("[data-settings-tab]"));
     const panels = Array.from(document.querySelectorAll("[data-settings-panel]"));
+    tabs.forEach((btn) => {
+      const name = btn.dataset.settingsTab;
+      btn.id = `settings-tab-${name}`;
+      btn.setAttribute("role", "tab");
+      btn.setAttribute("aria-controls", `settings-panel-${name}`);
+    });
+    panels.forEach((panel) => {
+      const name = panel.dataset.settingsPanel;
+      panel.id = `settings-panel-${name}`;
+      panel.setAttribute("role", "tabpanel");
+      panel.setAttribute("aria-labelledby", `settings-tab-${name}`);
+    });
 
     const TAB_META = {
       desktop: ["桌面", "名称、Dock 与显示行为"],
@@ -3476,8 +3796,14 @@
       data: ["数据", "YAML 备份、导入与重置"]
     };
 
-    function selectTab(name) {
-      tabs.forEach((btn) => btn.classList.toggle("active", btn.dataset.settingsTab === name));
+    function selectTab(name, moveFocus = false) {
+      tabs.forEach((btn) => {
+        const selected = btn.dataset.settingsTab === name;
+        btn.classList.toggle("active", selected);
+        btn.setAttribute("aria-selected", String(selected));
+        btn.tabIndex = selected ? 0 : -1;
+        if (selected && moveFocus) btn.focus();
+      });
       panels.forEach((panel) => {
         panel.hidden = panel.dataset.settingsPanel !== name;
       });
@@ -3518,11 +3844,11 @@
       if (dynamicToggle) dynamicToggle.checked = state.profile.dynamicWallpaper !== false;
       if (window.openConfigModal) window.openConfigModal();
       selectTab(tab || "desktop");
-      backdrop.hidden = false;
+      openModal(backdrop, { initialFocus: document.getElementById("closeSettingsBtn") });
     };
 
     window.closeSettings = function () {
-      backdrop.hidden = true;
+      closeModal(backdrop);
     };
 
     document.getElementById("openSettingsBtn").addEventListener("click", () => window.openSettings("desktop"));
@@ -3533,6 +3859,17 @@
 
     tabs.forEach((btn) => {
       btn.addEventListener("click", () => selectTab(btn.dataset.settingsTab));
+      btn.addEventListener("keydown", (event) => {
+        const current = tabs.indexOf(btn);
+        let next = null;
+        if (event.key === "ArrowRight" || event.key === "ArrowDown") next = (current + 1) % tabs.length;
+        else if (event.key === "ArrowLeft" || event.key === "ArrowUp") next = (current - 1 + tabs.length) % tabs.length;
+        else if (event.key === "Home") next = 0;
+        else if (event.key === "End") next = tabs.length - 1;
+        if (next === null) return;
+        event.preventDefault();
+        selectTab(tabs[next].dataset.settingsTab, true);
+      });
     });
 
     document.querySelectorAll(".settings-nav-parent").forEach((parent) => {
@@ -3589,6 +3926,19 @@
    * 17. 启动入口 (进出编辑模式零 DOM 重建！)
    * ========================================================= */
   document.addEventListener("DOMContentLoaded", () => {
+    associateFormLabels(document);
+    document.body.classList.toggle("reduced-motion", prefersReducedMotion());
+    reducedMotionQuery.addEventListener("change", () => {
+      document.body.classList.toggle("reduced-motion", prefersReducedMotion());
+      activeFlipAnimations.forEach((animation) => animation.cancel());
+      activeFlipAnimations.clear();
+      applyWallpaper();
+    });
+    mobileLayoutQuery.addEventListener("change", () => {
+      if (pointerDrag) window.dispatchEvent(new Event("pointercancel"));
+      normalizeMobileLayout(state.layout);
+      syncGridCoordsWithFlip();
+    });
     applyWallpaper();
     applyTheme();
     updateClock();

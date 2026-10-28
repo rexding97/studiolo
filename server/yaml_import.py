@@ -1,7 +1,10 @@
-"""导入 Studiolo 导出的 YAML，用于首次部署或灾难恢复。"""
+"""Parse and validate Studiolo YAML/JSON exports without side effects."""
 
 import json
+import os
 import re
+
+import validation
 
 
 class ImportError(Exception):
@@ -16,61 +19,69 @@ def _scalar(raw):
         if text[0] == '"':
             try:
                 return json.loads(text)
-            except json.JSONDecodeError:
-                return text[1:-1]
-        return text[1:-1]
+            except json.JSONDecodeError as exc:
+                raise ImportError(f"字符串引号无效: {exc.msg}") from None
+        return text[1:-1].replace("''", "'")
     if text == "true":
         return True
     if text == "false":
         return False
     if re.fullmatch(r"-?\d+", text):
         return int(text)
-    if re.fullmatch(r"-?\d+\.\d+", text):
+    if re.fullmatch(r"-?(?:\d+\.\d*|\d*\.\d+)", text):
         return float(text)
     return text
 
 
 def parse(text):
-    stripped = text.lstrip()
-    if stripped.startswith("{"):
-        return _normalize(json.loads(stripped))
+    if not isinstance(text, str):
+        raise ImportError("导入内容必须是文本")
+    if len(text.encode("utf-8")) > 2 * 1024 * 1024:
+        raise ImportError("导入文件超过 2MB")
+    try:
+        stripped = text.lstrip()
+        if stripped.startswith("{"):
+            state = json.loads(stripped)
+        else:
+            state = _parse_yaml(text)
+        return _normalize(state)
+    except (validation.ValidationError, ValueError, TypeError) as exc:
+        if isinstance(exc, ImportError):
+            raise
+        raise ImportError(f"配置无效: {exc}") from None
 
+
+def _parse_yaml(text):
     state = {"version": "4.0", "profile": {}, "layout": [], "apps": []}
     section = None
     current = None
-
-    for raw in text.splitlines():
+    for line_number, raw in enumerate(text.splitlines(), 1):
         line = raw.rstrip()
         if not line.strip() or line.lstrip().startswith("#"):
             continue
-
+        if "\t" in raw[:len(raw) - len(raw.lstrip())]:
+            raise ImportError(f"第 {line_number} 行不能使用 Tab 缩进")
         if re.match(r"^version\s*:", line):
             state["version"] = str(_scalar(line.split(":", 1)[1]))
             continue
-        if re.match(r"^profile\s*:\s*$", line):
-            section, current = "profile", None
+        matched_section = re.match(r"^(profile|layout|apps)\s*:\s*(\[\])?\s*$", line)
+        if matched_section:
+            section = matched_section.group(1)
+            current = None
             continue
-        if re.match(r"^layout\s*:\s*$", line):
-            section, current = "layout", None
-            continue
-        if re.match(r"^apps\s*:\s*$", line):
-            section, current = "apps", None
-            continue
-
         if section == "profile":
             match = re.match(r"^\s+([A-Za-z0-9_]+)\s*:\s*(.*)$", line)
             if not match:
-                continue
+                raise ImportError(f"第 {line_number} 行 profile 格式无效")
             key, value = match.group(1), _scalar(match.group(2))
             if key == "themeCustomJson":
                 try:
-                    state["profile"]["themeCustom"] = json.loads(value)
+                    state["profile"]["themeCustom"] = json.loads(value) if value else None
                 except (TypeError, json.JSONDecodeError):
-                    pass
+                    raise ImportError(f"第 {line_number} 行 themeCustomJson 无效") from None
             else:
                 state["profile"][key] = value
             continue
-
         if section in ("layout", "apps"):
             item = re.match(r"^\s*-\s+([A-Za-z0-9_]+)\s*:\s*(.*)$", line)
             if item:
@@ -80,48 +91,66 @@ def parse(text):
             field = re.match(r"^\s+([A-Za-z0-9_]+)\s*:\s*(.*)$", line)
             if field and current is not None:
                 current[field.group(1)] = _scalar(field.group(2))
-
-    return _normalize(state)
+                continue
+        root_field = re.match(r"^([A-Za-z0-9_]+)\s*:\s*(.*)$", line)
+        if root_field:
+            key, raw_value = root_field.group(1), root_field.group(2)
+            if key in ("plugins", "workspaces"):
+                try:
+                    state[key] = json.loads(raw_value) if raw_value else {}
+                except json.JSONDecodeError:
+                    raise ImportError(f"第 {line_number} 行 {key} 必须使用内联 JSON 对象或数组") from None
+            else:
+                state[key] = _scalar(raw_value)
+            section = None
+            current = None
+            continue
+        if line.strip():
+            raise ImportError(f"第 {line_number} 行格式无效或字段不受支持")
+    return state
 
 
 def _normalize(state):
-    if not isinstance(state, dict):
-        raise ImportError("YAML 根节点必须是对象")
-    if not isinstance(state.get("layout"), list):
-        raise ImportError("YAML 缺少 layout 列表")
-    if not isinstance(state.get("apps"), list) or not state["apps"]:
-        raise ImportError("YAML 缺少有效的 apps 列表")
-
+    validation.require_dict(state, "YAML 根节点")
+    validation.require_list(state.get("layout"), "YAML layout")
+    validation.require_list(state.get("apps"), "YAML apps")
     for item in state["layout"]:
-        if not isinstance(item, dict):
-            raise ImportError("layout 项必须是对象")
+        validation.require_dict(item, "layout 项")
         raw = item.pop("configJson", None)
         if raw is not None:
             try:
-                item["config"] = json.loads(raw) if isinstance(raw, str) else raw
+                item["config"] = json.loads(raw) if isinstance(raw, str) and raw else ({} if raw == "" else raw)
             except json.JSONDecodeError as exc:
-                raise ImportError(f"layout {item.get('id')} 的 configJson 无效: {exc}")
+                raise ImportError(f"layout {item.get('id')} 的 configJson 无效: {exc.msg}") from None
         item.setdefault("kind", "widget")
-        item["w"] = 1 if item.get("kind") == "app" else int(item.get("w") or 4)
-        item["h"] = 1 if item.get("kind") == "app" else int(item.get("h") or 2)
-
+        try:
+            item["w"] = 1 if item.get("kind") == "app" else int(item.get("w") or 4)
+            item["h"] = 1 if item.get("kind") == "app" else int(item.get("h") or 2)
+            item["x"] = int(item.get("x", 0))
+            item["y"] = int(item.get("y", 0))
+        except (TypeError, ValueError):
+            raise ImportError(f"layout {item.get('id')} 的坐标或尺寸无效") from None
     for app in state["apps"]:
-        if not isinstance(app, dict):
-            raise ImportError("apps 项必须是对象")
+        validation.require_dict(app, "apps 项")
         app.setdefault("status", "online")
         app.setdefault("useSiteLogo", True)
-        app["clicks"] = int(app.get("clicks") or 0)
-
+        try:
+            app["clicks"] = int(app.get("clicks") or 0)
+        except (TypeError, ValueError):
+            raise ImportError(f"应用 {app.get('id')} 的 clicks 无效") from None
     profile = state.setdefault("profile", {})
+    validation.require_dict(profile, "profile")
     profile.setdefault("title", "Studiolo")
     profile.setdefault("layoutMode", "bento")
     profile.setdefault("dockEnabled", True)
     profile.setdefault("wallpaper", "aurora-peaks")
     profile.setdefault("searchEngine", "google")
     profile.setdefault("themePreset", "vision-glass")
+    validation.validate_state(state)
     return state
 
 
 def load(path):
-    with open(path, "r", encoding="utf-8") as fh:
-        return parse(fh.read())
+    normalized = os.path.realpath(os.path.abspath(os.path.expanduser(os.fspath(path))))
+    with open(normalized, "r", encoding="utf-8") as fh:
+        return parse(fh.read(2 * 1024 * 1024 + 1))

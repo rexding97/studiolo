@@ -37,7 +37,7 @@ class Studiolo < Formula
   end
 
   service do
-    run [opt_bin/"studiolo", "--port", "3002"]
+    run [opt_bin/"studiolo", "--host", "127.0.0.1", "--port", "3002"]
     keep_alive true
     working_dir var/"studiolo"
     log_path var/"log/studiolo.log"

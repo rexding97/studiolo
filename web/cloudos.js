@@ -38,15 +38,21 @@
   normalizeLayoutCoordinates(state.layout);
 
   let editMode = false;
-
   let editingAppId = null;
   let editingWidgetId = null;
   let openedFolderWidgetId = null;
   let recentlyDroppedAppId = null;
   let suppressNextClick = false;
+  let applyingRemote = false;
+  let localSaveTimer = null;
+  let lastHistoryState = StudioloCore.clone(state);
+  let toastTimer = null;
+  const undoStack = [];
+  const redoStack = [];
+  const HISTORY_LIMIT = 50;
 
   function cloneDefault() {
-    return JSON.parse(JSON.stringify(window.REX_DEFAULT_STATE));
+    return StudioloCore.clone(window.REX_DEFAULT_STATE);
   }
 
   function migrateProfile(target) {
@@ -55,6 +61,10 @@
     if (!title || /^REX\b/i.test(title)) profile.title = "Studiolo";
     if (typeof profile.dockEnabled !== "boolean") profile.dockEnabled = true;
     profile.layoutMode = "bento";
+    if (!profile.themeCustom || typeof profile.themeCustom !== "object" || Array.isArray(profile.themeCustom)) {
+      profile.themePreset = "vision-glass";
+      profile.themeCustom = StudioloCore.clone(window.REX_THEME_PRESETS["vision-glass"].config);
+    }
     return target;
   }
 
@@ -62,52 +72,121 @@
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return migrateProfile(cloneDefault());
-      const parsed = JSON.parse(raw);
-      if (!parsed || !Array.isArray(parsed.layout) || !Array.isArray(parsed.apps)) {
-        return migrateProfile(cloneDefault());
-      }
-      if (!parsed.profile.themeCustom) {
-        parsed.profile.themePreset = "vision-glass";
-        parsed.profile.themeCustom = JSON.parse(
-          JSON.stringify(window.REX_THEME_PRESETS["vision-glass"].config)
-        );
-      }
-      return migrateProfile(parsed);
+      return migrateProfile(StudioloCore.normalizeState(JSON.parse(raw), { repair: true }));
     } catch (_) {
       return migrateProfile(cloneDefault());
     }
   }
 
-  let applyingRemote = false;
+  function recordHistory() {
+    const serialized = JSON.stringify(state);
+    if (serialized === JSON.stringify(lastHistoryState)) return;
+    undoStack.push(StudioloCore.clone(lastHistoryState));
+    if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+    redoStack.length = 0;
+    lastHistoryState = StudioloCore.clone(state);
+  }
 
-  function saveState() {
-    writeLocalState();
-    if (applyingRemote) return;
+  function saveState(options) {
+    const opts = options || {};
+    if (opts.history !== false && !applyingRemote) recordHistory();
+    else lastHistoryState = StudioloCore.clone(state);
+    if (localSaveTimer) clearTimeout(localSaveTimer);
+    localSaveTimer = setTimeout(writeLocalState, 120);
+    if (applyingRemote || opts.remote === false) return;
     try {
       Remote.schedulePush(state);
-    } catch (_) {
-      // Remote 尚未初始化时保持纯本地模式
-    }
+    } catch (_) {}
   }
 
   function writeLocalState() {
+    if (localSaveTimer) clearTimeout(localSaveTimer);
+    localSaveTimer = null;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch (_) {}
   }
+
+  function applyStatePresentation() {
+    applyWallpaper();
+    applyTheme();
+    applyProfileChrome();
+    renderWithFlip();
+  }
+
+  function replaceState(nextState, options) {
+    const opts = options || {};
+    const candidate = StudioloCore.normalizeState(StudioloCore.clone(nextState), { repair: opts.repair === true });
+    state = migrateProfile(candidate);
+    normalizeLayoutCoordinates(state.layout);
+    if (opts.clearHistory) {
+      undoStack.length = 0;
+      redoStack.length = 0;
+    }
+    saveState({ history: opts.history !== false, remote: opts.remote !== false });
+    applyStatePresentation();
+    return state;
+  }
+
+  function commitState(mutator, options) {
+    const draft = StudioloCore.clone(state);
+    const result = typeof mutator === "function" ? mutator(draft) || draft : mutator;
+    return replaceState(result, options);
+  }
+
+  function undo() {
+    if (!undoStack.length) return false;
+    redoStack.push(StudioloCore.clone(state));
+    const previous = undoStack.pop();
+    replaceState(previous, { history: false });
+    lastHistoryState = StudioloCore.clone(state);
+    return true;
+  }
+
+  function redo() {
+    if (!redoStack.length) return false;
+    undoStack.push(StudioloCore.clone(state));
+    const next = redoStack.pop();
+    replaceState(next, { history: false });
+    lastHistoryState = StudioloCore.clone(state);
+    return true;
+  }
+
+  function showToast(message, showUndo) {
+    const host = document.getElementById("globalToast");
+    if (!host) return;
+    if (toastTimer) clearTimeout(toastTimer);
+    host.textContent = message;
+    host.style.cssText = "position:fixed;z-index:10000;left:50%;bottom:28px;transform:translateX(-50%);display:flex;align-items:center;gap:14px;padding:12px 18px;border:1px solid rgba(255,255,255,.25);border-radius:14px;background:rgba(15,23,42,.94);color:#fff;box-shadow:0 12px 40px rgba(0,0,0,.35);font-size:13px";
+    if (showUndo) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "撤销";
+      button.style.cssText = "border:0;background:transparent;color:#7dd3fc;font-weight:700;cursor:pointer;padding:4px";
+      button.addEventListener("click", () => {
+        undo();
+        host.hidden = true;
+        host.style.display = "none";
+      });
+      host.appendChild(button);
+    }
+    host.hidden = false;
+    toastTimer = setTimeout(() => {
+      host.hidden = true;
+      host.style.display = "none";
+    }, 8000);
+  }
+
+  window.addEventListener("pagehide", writeLocalState);
 
   /* =========================================================
    * 0. 远端同步层：登录、state 拉取/推送、runtime 轮询
    * ========================================================= */
   const Remote = (() => {
     let authed = false;
-    let rev = 0;
-    let pushTimer = null;
     let runtimeTimer = null;
     let lastRuntimeSignature = "";
     let overlayBound = false;
-    let dirty = false;
-    let syncing = false;
     let metaTicks = 0;
 
     const SYNC_LABELS = {
@@ -141,6 +220,87 @@
       }
     }
 
+    function showConflict(context) {
+      return new Promise((resolve) => {
+        const host = document.getElementById("conflictDialog");
+        if (!host) return resolve("defer");
+        host.innerHTML = "";
+        host.style.cssText = "position:fixed;inset:0;z-index:10001;display:grid;place-items:center;padding:20px;background:rgba(2,6,23,.72)";
+        const panel = document.createElement("div");
+        panel.style.cssText = "width:min(620px,100%);max-height:85vh;overflow:auto;padding:24px;border:1px solid rgba(255,255,255,.2);border-radius:18px;background:#111c31;color:#fff;box-shadow:0 24px 80px rgba(0,0,0,.5)";
+        const title = document.createElement("h3");
+        title.textContent = "检测到同步冲突";
+        const description = document.createElement("p");
+        description.textContent = `远端版本为 rev ${context.rev}。本地修改尚未被覆盖，请选择如何处理。`;
+        const details = document.createElement("pre");
+        details.style.cssText = "white-space:pre-wrap;word-break:break-word;max-height:260px;overflow:auto;padding:12px;border-radius:10px;background:rgba(0,0,0,.25);font-size:11px";
+        details.textContent = `本地快照：\n${JSON.stringify(context.latestLocalState, null, 2)}\n\n远端快照：\n${JSON.stringify(context.remoteState, null, 2)}`;
+        const actions = document.createElement("div");
+        actions.style.cssText = "display:flex;gap:10px;flex-wrap:wrap;margin-top:16px";
+        panel.append(title, description, details, actions);
+        host.appendChild(panel);
+        host.hidden = false;
+
+        function finish(action) {
+          host.hidden = true;
+          host.style.display = "none";
+          host.innerHTML = "";
+          resolve(action);
+        }
+        function addButton(label, action, primary) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.textContent = label;
+          button.style.cssText = `padding:9px 13px;border:1px solid rgba(255,255,255,.25);border-radius:10px;background:${primary ? "#0284c7" : "rgba(255,255,255,.1)"};color:#fff;cursor:pointer`;
+          button.addEventListener("click", async () => {
+            if (action !== "snapshots") return finish(action);
+            button.disabled = true;
+            const result = await request("/api/v1/state/snapshots?limit=20");
+            const snapshots = result.body && Array.isArray(result.body.snapshots) ? result.body.snapshots : [];
+            details.textContent = snapshots.length
+              ? snapshots.map((item) => `rev ${item.rev} · ${item.createdAt || "未知时间"}`).join("\n")
+              : "没有可查看的远端快照。";
+            button.disabled = false;
+          });
+          actions.appendChild(button);
+        }
+        addButton("保留本地并覆盖远端", "local", true);
+        addButton("载入远端", "remote");
+        addButton("查看远端快照", "snapshots");
+        addButton("稍后决定", "defer");
+      });
+    }
+
+    const sync = StudioloRemote.createSync({
+      request,
+      storage: localStorage,
+      storageKey: STORAGE_KEY + "_outbox",
+      debounceMs: 700,
+      getState: () => StudioloCore.clone(state),
+      onStatus: setSync,
+      onAuthRequired: () => {
+        authed = false;
+        show("登录已过期，请重新登录");
+      },
+      onFirstSync: () => {
+        logoStatusCache.clear();
+        renderWorkspace();
+      },
+      onConflict: showConflict,
+      onApplyRemote: (remoteState) => {
+        applyingRemote = true;
+        try {
+          replaceState(remoteState, { repair: true, history: false, remote: false, clearHistory: true });
+          writeLocalState();
+        } catch (error) {
+          setSync("offline", "远端配置无效，未应用");
+          console.error("[remote] invalid state", error);
+        } finally {
+          applyingRemote = false;
+        }
+      }
+    });
+
     function overlay() {
       const el = document.getElementById("authOverlay");
       if (!el) return null;
@@ -168,6 +328,7 @@
             hint.textContent = "请输入访问密码";
             hide();
             authed = true;
+            sync.setAuthenticated(true);
             setSync("saving");
             logoStatusCache.clear();
             renderWorkspace();
@@ -196,106 +357,22 @@
       if (el) el.hidden = true;
     }
 
-    async function pullState() {
-      syncing = true;
-      const { res, body } = await request("/api/v1/state");
-      syncing = false;
-      if (res.status === 401) {
-        authed = false;
-        setSync("auth");
-        show();
-        return;
-      }
-      if (!res.ok || !body) {
-        setSync("offline");
-        return;
-      }
-      rev = body.rev || 0;
-      if (!body.state) {
-        schedulePush(0);
-        return;
-      }
-      applyingRemote = true;
-      state = migrateProfile(body.state);
-      const fallback = cloneDefault();
-      if (!state.profile) state.profile = fallback.profile;
-      if (!state.profile.themeCustom) {
-        state.profile.themePreset = "vision-glass";
-        state.profile.themeCustom = JSON.parse(
-          JSON.stringify(window.REX_THEME_PRESETS["vision-glass"].config)
-        );
-      }
-      if (!Array.isArray(state.layout)) state.layout = [];
-      if (!Array.isArray(state.apps)) state.apps = [];
-      normalizeLayoutCoordinates(state.layout);
-      writeLocalState();
-      renderWorkspace();
-      applyingRemote = false;
-      dirty = false;
-      setSync("ok");
+    function schedulePush(snapshot, delay) {
+      if (DEMO_MODE) return;
+      sync.enqueue(snapshot, delay);
     }
 
-    function schedulePush(delay) {
-      if (!authed || DEMO_MODE) return;
-      dirty = true;
-      if (pushTimer) clearTimeout(pushTimer);
-      pushTimer = setTimeout(push, typeof delay === "number" ? delay : 800);
-    }
-
-    async function push() {
-      pushTimer = null;
-      if (!authed) return;
-      const snapshot = JSON.parse(JSON.stringify(state));
-      const sentRev = rev;
-      setSync("saving");
-      const { res, body } = await request("/api/v1/state", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rev: sentRev, state: snapshot })
-      });
-      if (res.status === 401) {
-        authed = false;
-        setSync("auth");
-        show("登录已过期，请重新登录");
-        return;
-      }
-      if (res.status === 409 && body) {
-        rev = body.rev || rev;
-        if (body.state) {
-          applyingRemote = true;
-          state = migrateProfile(body.state);
-          normalizeLayoutCoordinates(state.layout);
-          writeLocalState();
-          renderWorkspace();
-          applyingRemote = false;
-        }
-        dirty = false;
-        setSync("ok", "已同步（载入远端最新）");
-        console.warn("[remote] state conflict, loaded latest from server");
-        return;
-      }
-      if (res.status === 0) {
-        setSync("offline");
-        return;
-      }
-      if (res.ok && body) {
-        const firstSync = sentRev === 0;
-        rev = body.rev || rev;
-        dirty = false;
-        setSync("ok");
-        if (firstSync) {
-          // 服务端首次拿到应用清单，favicon 白名单现在才生效
-          logoStatusCache.clear();
-          renderWorkspace();
-        }
-      }
+    function pullState() {
+      if (DEMO_MODE) return Promise.resolve({ skipped: true });
+      sync.setAuthenticated(authed);
+      return sync.pull();
     }
 
     async function checkRemoteState() {
-      if (!authed || dirty || syncing) return;
+      if (!authed || !sync.canPull()) return;
       const { res, body } = await request("/api/v1/state/meta");
       if (!res.ok || !body) return;
-      if (body.rev > rev) await pullState();
+      if (body.rev > sync.getRevision()) await pullState();
     }
 
     function startRuntime() {
@@ -521,10 +598,11 @@
       startRuntime();
     }
 
-    window.addEventListener("online", () => {
+    window.addEventListener("online", async () => {
       setSync("saving");
       if (authed) {
-        pullState();
+        sync.setAuthenticated(true);
+        await sync.reconnect();
         refreshRuntime();
       } else {
         init();
@@ -532,19 +610,6 @@
     });
 
     window.addEventListener("offline", () => setSync("offline"));
-
-    window.addEventListener("pagehide", () => {
-      if (!authed || !dirty || DEMO_MODE) return;
-      try {
-        fetch("/api/v1/state", {
-          method: "PUT",
-          keepalive: true,
-          credentials: "same-origin",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ rev, state })
-        });
-      } catch (_) {}
-    });
 
     document.addEventListener("visibilitychange", () => {
       if (!document.hidden && authed) refreshRuntime();
@@ -1192,6 +1257,15 @@
         } else if (p.kind === "layout-item" && p.layoutId) {
           const item = state.layout.find((x) => x.id === p.layoutId);
           if (item) {
+            if (
+              item.kind === "widget" &&
+              ["server-node", "app-folder"].includes(item.widgetType) &&
+              state.apps.some((app) => app.containerId === item.id)
+            ) {
+              editingWidgetId = item.id;
+              document.getElementById("deleteWidgetBtn").click();
+              return;
+            }
             state.layout = state.layout.filter((x) => x.id !== item.id);
             if (item.kind === "app" && item.appId) {
               const appObj = state.apps.find((a) => a.id === item.appId);
@@ -1204,6 +1278,7 @@
         saveState();
         renderWithFlip();
         if (openedFolderWidgetId) renderFolderModalContent(openedFolderWidgetId);
+        showToast("项目已删除", true);
         return;
       }
 
@@ -1531,10 +1606,13 @@
     photoLayer.style.backgroundImage = "none";
 
     if (state.profile.customWallpaperUrl) {
-      stage.dataset.scene = "scene-aurora";
-      photoLayer.style.backgroundImage = `linear-gradient(180deg, rgba(8,13,26,0.26), rgba(8,13,26,0.56)), url('${state.profile.customWallpaperUrl}')`;
-      stage.classList.add("has-photo");
-      return;
+      const wallpaperUrl = StudioloCore.normalizeUrl(state.profile.customWallpaperUrl);
+      if (wallpaperUrl) {
+        stage.dataset.scene = "scene-aurora";
+        photoLayer.style.backgroundImage = `linear-gradient(180deg, rgba(8,13,26,0.26), rgba(8,13,26,0.56)), url(${JSON.stringify(wallpaperUrl)})`;
+        stage.classList.add("has-photo");
+        return;
+      }
     }
 
     const pack = (window.REX_THEME_PACKS || []).find((item) => item.id === state.profile.themePack);
@@ -1628,31 +1706,39 @@
   function createAppUnit(app, opts = {}) {
     const a = document.createElement("a");
     a.className = "app-unit" + (recentlyDroppedAppId === app.id ? " just-dropped" : "");
-    a.href = app.href;
+    const safeHref = StudioloCore.normalizeUrl(app.href);
+    if (safeHref) a.href = safeHref;
     a.target = "_blank";
-    a.rel = "noopener";
+    a.rel = "noopener noreferrer";
     a.dataset.appId = app.id;
     a.dataset.itemId = app.id;
     a.dataset.flipKey = `app-${opts.contextKey || "ctx"}-${app.id}`;
     a.draggable = false;
 
-    const bgStyle =
-      app.color ||
+    const bgStyle = StudioloCore.safeColor(
+      app.color,
       (window.REX_ICON_LIBRARY[app.icon] && window.REX_ICON_LIBRARY[app.icon].bg) ||
-      "linear-gradient(145deg, #2563eb, #0ea5e9)";
-
+        "linear-gradient(145deg, #2563eb, #0ea5e9)"
+    );
     const cachedLogo = logoStatusCache.get(app.id);
-    const hasImmediateLogo = typeof cachedLogo === "string" && cachedLogo.length > 0;
+    const safeCachedLogo = typeof cachedLogo === "string" ? StudioloCore.normalizeUrl(cachedLogo) : null;
+    const hasImmediateLogo = Boolean(safeCachedLogo);
 
     a.innerHTML = `
       <span class="app-badge-edit" title="点击编辑此应用">✎</span>
-      <span class="app-dot ${app.status || "online"}"></span>
-      <div class="app-squircle ${hasImmediateLogo ? "has-real-logo" : ""}" style="background: ${bgStyle}">
-        <img class="app-real-logo" ${hasImmediateLogo ? `src="${escapeHtml(cachedLogo)}"` : ""} alt="" />
+      <span class="app-dot"></span>
+      <div class="app-squircle">
+        <img class="app-real-logo" alt="" />
         <div class="app-svg-wrap">${getIconSvg(app.icon)}</div>
       </div>
-      <div class="app-label">${escapeHtml(app.name)}</div>
+      <div class="app-label"></div>
     `;
+    a.querySelector(".app-dot").classList.add(["online", "offline", "lan"].includes(app.status) ? app.status : "online");
+    const squircle = a.querySelector(".app-squircle");
+    squircle.style.background = bgStyle;
+    squircle.classList.toggle("has-real-logo", hasImmediateLogo);
+    if (safeCachedLogo) a.querySelector(".app-real-logo").src = safeCachedLogo;
+    a.querySelector(".app-label").textContent = app.name;
 
     a.querySelectorAll("img, svg").forEach((ch) => ch.setAttribute("draggable", "false"));
 
@@ -1687,6 +1773,7 @@
 
     a.addEventListener("click", (e) => {
       e.stopPropagation();
+      if (!safeHref) e.preventDefault();
       if (editMode) {
         e.preventDefault();
         window.openAppModal(app.id);
@@ -1733,24 +1820,23 @@
     btn.className = "app-unit";
     btn.title = `还有 ${hiddenApps.length} 个应用，点击展开全部 ${totalCount} 项`;
 
+    const preview = document.createElement("div");
+    preview.className = "more-folder-squircle";
     const previewFour = hiddenApps.slice(0, 4);
-    let dotsHtml = "";
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 4; i += 1) {
+      const dot = document.createElement("div");
+      dot.className = "mini-preview-dot";
       const item = previewFour[i];
-      if (item) {
-        const bg = item.color || "linear-gradient(145deg, #38bdf8, #6366f1)";
-        dotsHtml += `<div class="mini-preview-dot" style="background:${bg}">${getIconSvg(item.icon)}</div>`;
-      } else {
-        dotsHtml += `<div class="mini-preview-dot" style="background:rgba(255,255,255,0.18)"></div>`;
-      }
+      dot.style.background = item
+        ? StudioloCore.safeColor(item.color, "linear-gradient(145deg, #38bdf8, #6366f1)")
+        : "rgba(255,255,255,0.18)";
+      if (item) dot.innerHTML = getIconSvg(item.icon);
+      preview.appendChild(dot);
     }
-
-    btn.innerHTML = `
-      <div class="more-folder-squircle">
-        ${dotsHtml}
-      </div>
-      <div class="app-label">··· (${totalCount})</div>
-    `;
+    const label = document.createElement("div");
+    label.className = "app-label";
+    label.textContent = `··· (${totalCount})`;
+    btn.append(preview, label);
 
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -2829,10 +2915,46 @@
 
     document.getElementById("deleteWidgetBtn").addEventListener("click", () => {
       if (!editingWidgetId) return;
-      state.layout = state.layout.filter((x) => x.id !== editingWidgetId);
-      saveState();
-      renderWithFlip();
+      const widget = state.layout.find((item) => item.id === editingWidgetId);
+      if (!widget || !window.confirm("确定删除此组件吗？删除后可在提示中撤销。")) return;
+      const containedApps = state.apps.filter((app) => app.containerId === widget.id);
+      const otherContainers = state.layout.filter((item) =>
+        item.id !== widget.id && item.kind === "widget" && ["server-node", "app-folder"].includes(item.widgetType)
+      );
+      let destination = null;
+      if (containedApps.length) {
+        const choices = otherContainers.map((item) => item.id).join("、") || "（无其他容器）";
+        destination = window.prompt(
+          `组件内有 ${containedApps.length} 个应用。输入 desktop 移到桌面，输入 cascade 一并删除，或输入其他容器 ID：${choices}`,
+          "desktop"
+        );
+        if (destination === null) return;
+        destination = destination.trim();
+        if (destination !== "desktop" && destination !== "cascade" && !otherContainers.some((item) => item.id === destination)) {
+          alert("目标容器无效，未删除组件。");
+          return;
+        }
+      }
+      commitState((draft) => {
+        if (destination === "cascade") {
+          const removedIds = new Set(containedApps.map((app) => app.id));
+          draft.apps = draft.apps.filter((app) => !removedIds.has(app.id));
+          draft.layout = draft.layout.filter((item) => !(item.kind === "app" && removedIds.has(item.appId)));
+        } else if (destination) {
+          containedApps.forEach((app) => {
+            const target = draft.apps.find((item) => item.id === app.id);
+            if (!target) return;
+            target.containerId = destination;
+            if (destination === "desktop" && !draft.layout.some((item) => item.kind === "app" && item.appId === app.id)) {
+              const spot = findFirstFreeSpot(draft.layout, 1, 1, null, 1);
+              draft.layout.push({ id: `bare-${app.id}-${Date.now()}`, kind: "app", appId: app.id, x: spot.x, y: spot.y, w: 1, h: 1 });
+            }
+          });
+        }
+        draft.layout = draft.layout.filter((item) => item.id !== widget.id);
+      });
       cfgBackdrop.hidden = true;
+      showToast(destination === "cascade" ? "组件及其中应用已删除" : "组件已删除", true);
     });
 
     const catalogGrid = document.getElementById("widgetCatalogGrid");
@@ -2919,7 +3041,7 @@
       picker.appendChild(btn);
     });
 
-    window.openAppModal = function (appId, defaultContainerId = "folder-bookmarks") {
+    window.openAppModal = function (appId, defaultContainerId = "desktop") {
       refreshContainerSelectOptions();
       editingAppId = appId;
       const app = state.apps.find((a) => a.id === appId);
@@ -2929,7 +3051,11 @@
       document.getElementById("appHrefInput").value = app ? app.href : "https://";
       document.getElementById("appLogoUrlInput").value = app ? app.logoUrl || "" : "";
       document.getElementById("appUseSiteLogoCheck").checked = app ? app.useSiteLogo !== false : true;
-      document.getElementById("appContainerSelect").value = app ? app.containerId || "desktop" : defaultContainerId;
+      const containerSelect = document.getElementById("appContainerSelect");
+      const requestedContainer = app ? app.containerId || "desktop" : defaultContainerId;
+      containerSelect.value = Array.from(containerSelect.options).some((option) => option.value === requestedContainer)
+        ? requestedContainer
+        : "desktop";
       document.getElementById("appStatusSelect").value = app ? app.status || "online" : "online";
       document.getElementById("appPortInput").value = app ? app.port || "" : "443";
       document.getElementById("appNoteInput").value = app ? app.note || "" : "";
@@ -2960,14 +3086,27 @@
     document.getElementById("saveAppBtn").addEventListener("click", () => {
       const name = document.getElementById("appNameInput").value.trim() || "未命名应用";
       const desc = document.getElementById("appDescInput").value.trim();
-      const href = document.getElementById("appHrefInput").value.trim() || "#";
-      const logoUrl = document.getElementById("appLogoUrlInput").value.trim();
+      const href = StudioloCore.normalizeUrl(document.getElementById("appHrefInput").value.trim(), false);
+      const logoUrl = StudioloCore.normalizeUrl(document.getElementById("appLogoUrlInput").value.trim());
+      if (!href || logoUrl === null) {
+        alert("应用地址和 Logo 地址仅支持有效的 http(s) URL，Logo 可留空。");
+        return;
+      }
+      const rawColor = colorInput.value.trim();
+      const color = StudioloCore.safeColor(rawColor);
+      if (!color) {
+        alert("图标颜色仅支持安全的 CSS 颜色或渐变。");
+        return;
+      }
       const useSiteLogo = document.getElementById("appUseSiteLogoCheck").checked;
-      const containerId = document.getElementById("appContainerSelect").value;
+      const containerSelect = document.getElementById("appContainerSelect");
+      const requestedContainer = containerSelect.value;
+      const containerId = Array.from(containerSelect.options).some((option) => option.value === requestedContainer)
+        ? requestedContainer
+        : "desktop";
       const status = document.getElementById("appStatusSelect").value;
       const port = document.getElementById("appPortInput").value.trim();
       const note = document.getElementById("appNoteInput").value.trim();
-      const color = colorInput.value.trim();
       const pinned = document.getElementById("appPinnedCheck").checked;
       const wantBareDesktop = document.getElementById("appStandaloneCheck").checked || containerId === "desktop";
 
@@ -3035,13 +3174,14 @@
     });
 
     document.getElementById("deleteAppBtn").addEventListener("click", () => {
-      if (!editingAppId) return;
+      if (!editingAppId || !window.confirm("确定删除此应用吗？删除后可在提示中撤销。")) return;
       state.apps = state.apps.filter((a) => a.id !== editingAppId);
       state.layout = state.layout.filter((x) => !(x.kind === "app" && x.appId === editingAppId));
       saveState();
       renderWithFlip();
       if (openedFolderWidgetId) renderFolderModalContent(openedFolderWidgetId);
       backdrop.hidden = true;
+      showToast("应用已删除", true);
     });
   }
 
@@ -3053,18 +3193,19 @@
     if (!pop) return;
 
     const containerWidget = state.layout.find((x) => x.id === app.containerId);
-    const containerTitle = containerWidget && containerWidget.config ? containerWidget.config.title : "桌面独立应用";
+    const containerTitle = String(containerWidget && containerWidget.config ? containerWidget.config.title : "桌面独立应用");
+    const latency = Number.isFinite(Number(app.latency)) ? Math.max(0, Math.round(Number(app.latency))) : 12;
     const statusLabel =
       app.status === "lan"
-        ? `仅内网 · ${app.latency || 2}ms`
+        ? `仅内网 · ${latency}ms`
         : app.status === "offline"
         ? "离线"
-        : `在线 · ${app.latency || 12}ms`;
+        : `在线 · ${latency}ms`;
 
     pop.innerHTML = `
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
         <strong style="font-size:14.5px">${escapeHtml(app.name)}</strong>
-        <span class="widget-tag">${statusLabel}</span>
+        <span class="widget-tag">${escapeHtml(statusLabel)}</span>
       </div>
       <div style="font-size:11.5px;color:#7dd3fc;font-family:ui-monospace,monospace;word-break:break-all;margin-bottom:8px">
         ${escapeHtml(app.href)}
@@ -3127,10 +3268,13 @@
       let html = "";
 
       matches.slice(0, 7).forEach((app, i) => {
+        const safeHref = StudioloCore.normalizeUrl(app.href);
+        if (!safeHref) return;
+        const safeBackground = StudioloCore.safeColor(app.color, "#2563eb");
         html += `
-          <a class="omni-row ${i === 0 ? "active" : ""}" href="${escapeHtml(app.href)}" target="_blank" rel="noopener">
+          <a class="omni-row ${i === 0 ? "active" : ""}" href="${escapeHtml(safeHref)}" target="_blank" rel="noopener noreferrer">
             <div style="display:flex;align-items:center;gap:10px">
-              <div style="width:32px;height:32px;border-radius:10px;background:${app.color || "#2563eb"};display:grid;place-items:center">
+              <div style="width:32px;height:32px;border-radius:10px;background:${safeBackground};display:grid;place-items:center">
                 <div style="width:18px;height:18px">${getIconSvg(app.icon)}</div>
               </div>
               <div>
@@ -3192,60 +3336,8 @@
   /* =========================================================
    * 16. YAML 导出 / 导入中心
    * ========================================================= */
-  function escYaml(val) {
-    if (val === null || val === undefined) return '""';
-    const s = String(val);
-    if (s === "" || /[:#\n"'{}\[\],&*!|>%@`]/.test(s) || /^\s|\s$/.test(s)) {
-      return JSON.stringify(s);
-    }
-    return s;
-  }
-
   function stateToYaml(st) {
-    const lines = [];
-    lines.push("# Studiolo 桌面 2D 坐标与主题配置文件");
-    lines.push(`version: ${escYaml(st.version || "5.0")}`);
-    lines.push("profile:");
-    for (const [k, v] of Object.entries(st.profile || {})) {
-      if (k === "themeCustom") {
-        lines.push(`  themeCustomJson: ${JSON.stringify(JSON.stringify(v || {}))}`);
-      } else {
-        lines.push(`  ${k}: ${escYaml(v)}`);
-      }
-    }
-    lines.push("layout:");
-    for (const item of st.layout || []) {
-      lines.push(`  - id: ${escYaml(item.id)}`);
-      lines.push(`    kind: ${escYaml(item.kind)}`);
-      lines.push(`    x: ${Number(item.x) || 1}`);
-      lines.push(`    y: ${Number(item.y) || 1}`);
-      lines.push(`    w: ${Number(item.kind === "app" ? 1 : item.w || 4)}`);
-      lines.push(`    h: ${Number(item.kind === "app" ? 1 : item.h || 2)}`);
-      if (item.kind === "app") {
-        lines.push(`    appId: ${escYaml(item.appId)}`);
-      } else {
-        lines.push(`    widgetType: ${escYaml(item.widgetType)}`);
-        lines.push(`    configJson: ${JSON.stringify(JSON.stringify(item.config || {}))}`);
-      }
-    }
-    lines.push("apps:");
-    for (const a of st.apps || []) {
-      lines.push(`  - id: ${escYaml(a.id)}`);
-      lines.push(`    name: ${escYaml(a.name)}`);
-      lines.push(`    desc: ${escYaml(a.desc)}`);
-      lines.push(`    href: ${escYaml(a.href)}`);
-      lines.push(`    containerId: ${escYaml(a.containerId)}`);
-      lines.push(`    icon: ${escYaml(a.icon)}`);
-      lines.push(`    logoUrl: ${escYaml(a.logoUrl || "")}`);
-      lines.push(`    useSiteLogo: ${a.useSiteLogo !== false}`);
-      lines.push(`    color: ${escYaml(a.color)}`);
-      lines.push(`    status: ${escYaml(a.status)}`);
-      lines.push(`    port: ${escYaml(a.port || "")}`);
-      lines.push(`    note: ${escYaml(a.note || "")}`);
-      lines.push(`    pinned: ${Boolean(a.pinned)}`);
-      lines.push(`    clicks: ${Number(a.clicks) || 0}`);
-    }
-    return lines.join("\n") + "\n";
+    return StudioloCore.exportYaml(st);
   }
 
   function parseScalar(raw) {
@@ -3266,81 +3358,7 @@
   }
 
   function yamlToState(yamlText) {
-    const trimmed = yamlText.trim();
-    if (trimmed.startsWith("{")) return JSON.parse(trimmed);
-
-    const next = cloneDefault();
-    next.layout = [];
-    next.apps = [];
-    let section = null;
-    let curr = null;
-
-    for (const rawLine of yamlText.split(/\r?\n/)) {
-      const line = rawLine.replace(/\s+$/, "");
-      if (!line.trim() || line.trim().startsWith("#")) continue;
-
-      if (/^version\s*:/.test(line)) {
-        next.version = String(parseScalar(line.split(":").slice(1).join(":")));
-        continue;
-      }
-      if (/^profile\s*:/.test(line)) {
-        section = "profile";
-        curr = null;
-        continue;
-      }
-      if (/^layout\s*:/.test(line)) {
-        section = "layout";
-        curr = null;
-        continue;
-      }
-      if (/^apps\s*:/.test(line)) {
-        section = "apps";
-        curr = null;
-        continue;
-      }
-
-      if (section === "profile") {
-        const m = line.match(/^\s+([a-zA-Z0-9_]+)\s*:\s*(.*)$/);
-        if (m) {
-          const k = m[1];
-          const v = parseScalar(m[2]);
-          if (k === "themeCustomJson") {
-            try {
-              next.profile.themeCustom = JSON.parse(String(v));
-            } catch (_) {}
-          } else {
-            next.profile[k] = v;
-          }
-        }
-      } else if (section === "layout" || section === "apps") {
-        const itemStart = line.match(/^\s*-\s+([a-zA-Z0-9_]+)\s*:\s*(.*)$/);
-        if (itemStart) {
-          curr = {};
-          curr[itemStart[1]] = parseScalar(itemStart[2]);
-          next[section].push(curr);
-          continue;
-        }
-        const prop = line.match(/^\s+([a-zA-Z0-9_]+)\s*:\s*(.*)$/);
-        if (prop && curr) {
-          const k = prop[1];
-          const v = parseScalar(prop[2]);
-          if (k === "configJson") {
-            try {
-              curr.config = JSON.parse(String(v));
-            } catch (_) {
-              curr.config = {};
-            }
-          } else {
-            curr[k] = v;
-          }
-        }
-      }
-    }
-
-    if (!next.apps.length) throw new Error("YAML 中未解析到有效的 apps 列表");
-    if (!next.layout.length) next.layout = cloneDefault().layout;
-    normalizeLayoutCoordinates(next.layout);
-    return next;
+    return StudioloCore.parseYaml(yamlText);
   }
 
   function initConfigModal() {
@@ -3378,7 +3396,13 @@
     };
 
     document.getElementById("applyCustomWpBtn").addEventListener("click", () => {
-      state.profile.customWallpaperUrl = customUrlInput.value.trim();
+      const url = StudioloCore.normalizeUrl(customUrlInput.value.trim());
+      if (url === null) {
+        statusMsg.style.color = "#fb7185";
+        statusMsg.textContent = "壁纸仅支持有效的 http(s) URL";
+        return;
+      }
+      state.profile.customWallpaperUrl = url;
       saveState();
       applyWallpaper();
       renderSwatches();
@@ -3399,14 +3423,13 @@
     });
 
     document.getElementById("applyYamlBtn").addEventListener("click", () => {
+      if (!window.confirm("导入将替换当前桌面、主题和壁纸。继续后可使用撤销恢复，是否继续？")) return;
       try {
-        state = yamlToState(yamlBox.value);
-        saveState();
-        applyWallpaper();
-        applyTheme();
-        renderWithFlip();
+        const imported = yamlToState(yamlBox.value);
+        replaceState(imported);
+        yamlBox.value = stateToYaml(state);
         statusMsg.style.color = "#34d399";
-        statusMsg.textContent = "YAML 配置已成功加载！";
+        statusMsg.textContent = "配置已成功加载，可通过撤销恢复导入前状态。";
       } catch (err) {
         statusMsg.style.color = "#fb7185";
         statusMsg.textContent = "解析失败: " + err.message;
@@ -3422,16 +3445,14 @@
       r.onload = () => {
         yamlBox.value = r.result;
         document.getElementById("applyYamlBtn").click();
+        fileInput.value = "";
       };
       r.readAsText(f);
     });
 
     document.getElementById("resetDefaultBtn").addEventListener("click", () => {
-      state = cloneDefault();
-      saveState();
-      applyWallpaper();
-      applyTheme();
-      renderWithFlip();
+      if (!window.confirm("确定恢复默认桌面与主题吗？当前状态可通过撤销恢复。")) return;
+      replaceState(cloneDefault());
       yamlBox.value = stateToYaml(state);
       statusMsg.style.color = "#38bdf8";
       statusMsg.textContent = "已恢复默认桌面与主题配置";
@@ -3612,6 +3633,14 @@
     });
 
     document.addEventListener("keydown", (e) => {
+      const modifier = e.metaKey || e.ctrlKey;
+      const editingText = e.target.closest && e.target.closest("input, textarea, [contenteditable=true]");
+      if (modifier && !editingText && (e.key.toLowerCase() === "z" || e.key.toLowerCase() === "y")) {
+        e.preventDefault();
+        if (e.key.toLowerCase() === "y" || e.shiftKey) redo();
+        else undo();
+        return;
+      }
       if (e.key === "Escape") {
         if (openedFolderWidgetId) closeFolderModal();
         else if (editMode) setEdit(false);

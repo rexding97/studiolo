@@ -1,59 +1,86 @@
-# 架构设计：主题与插件
+# 架构设计
 
-本文档定义 Studiolo 的两个扩展点：主题系统与组件插件系统。
+本文明确区分当前实现与本迭代目标。目标不是可用 API 的承诺；模块边界、端点和恢复行为以最终代码为准。
 
-## 1. 主题系统
+## 1. 当前实现
 
-### 1.1 目标
+- `web/` 是无构建步骤的静态前端，`cloudos.js` 负责工作区渲染、交互和同步，`data.js` 提供默认状态、图标和主题预设。
+- `server/` 使用 Python 标准库与 psutil。HTTP 入口、路由、认证、状态持久化、采集和 YAML 转换按模块组织，但尚未形成独立的 core / remote / widgets 包。
+- SQLite 保存账号、会话、桌面状态、快照、点击和指标。状态写入使用 `rev` 乐观锁，当前保留最近 20 份快照。
+- 前端主题由 `REX_THEME_TOKENS` 和 CSS 变量驱动。内置主题逻辑是可执行代码，导入/导出的主题包是纯数据。
+- Docker 入口负责权限、密码初始化与 YAML 导入，实际服务降权到 uid `10001`；Compose 默认仅发布到 `127.0.0.1`。
 
-- 主题由 **design tokens** 驱动，而不是硬编码字段
-- 新增一个视觉参数时，只改 token 定义和 CSS，不改编辑器代码
-- 用户可以保存、导出、导入自己的主题
-- 主题包是纯数据，可分享，不执行代码
+## 2. 目标分层
 
-### 1.2 Token 定义
+### 2.1 Core：可信状态与服务边界
 
-Token 定义放在 `web/data.js` 的 `REX_THEME_TOKENS`：
+Core 负责认证、初始化状态、桌面/工作区数据、版本冲突、备份、严格导入和快照恢复。它应保证：
 
-```js
-window.REX_THEME_TOKENS = [
-  {
-    group: "surface",
-    key: "cardBgOpacity",
-    label: "卡片表面不透明度",
-    type: "range",
-    min: 0.04, max: 0.65, step: 0.02,
-    default: 0.14,
-    apply: (v) => ({
-      "--theme-card-bg": `linear-gradient(145deg, rgba(255,255,255,${v}) 0%, rgba(15,23,42,${Math.min(0.85, v * 1.2)}) 100%)`
-    })
-  },
-  {
-    group: "icon",
-    key: "iconShape",
-    label: "图标几何形状",
-    type: "select",
-    options: [
-      { value: "squircle", label: "iOS 超椭圆" },
-      { value: "circle", label: "正圆" },
-      { value: "rounded", label: "圆角" },
-      { value: "sharp", label: "锐角" }
-    ],
-    default: "squircle",
-    apply: (v) => ({ "--theme-icon-radius": shapeMap[v] })
-  }
-];
-```
+- 未完成初始化时，存活与就绪状态不能混为一谈
+- 导入或恢复失败不会被入口脚本吞掉，也不能被报告为成功
+- 覆盖已有状态必须显式触发，并保留可审计的恢复前保护
+- 数据校验、兼容迁移和持久化在服务端完成，浏览器不是唯一事实来源
 
-`apply(value)` 返回一组 CSS 变量，`applyTheme()` 统一遍历执行。
+当前 `/api/v1/health` 提供存活与诊断，`/api/v1/ready` 仅在初始化、数据库和采集器检查通过后返回成功；容器健康检查使用后者。
 
-特殊 token 可以直接写入 `document.body.dataset`（例如 `iconSurface`、`logoMode`），通过 `dataset` 字段声明：
+### 2.2 Remote：外部系统适配
+
+Remote 承载本机/SSH 主机指标、应用探测以及计划中的 ICS、CalDAV 等远程数据适配。适配器把外部数据转换为稳定的内部模型，不直接修改桌面文档。
+
+- 外部超时、认证失败和数据格式错误应隔离，不能拖垮 Core
+- 凭据只来自受控运行环境，不进入 YAML、插件数据或 CI
+- 外部请求需要目标限制、超时和错误边界；CI 使用本地替身，不访问真实私人服务
+- ICS 是日历数据交换格式，CalDAV 是远程日历协议，两者不应混为同一个适配器
+
+### 2.3 Widgets：展示与交互
+
+Widgets 负责组件渲染、配置表单和运行时数据消费。目标是让服务器、文件夹、天气、日历、便签和时钟通过一致注册接口接入，而不是继续在主渲染函数中堆叠分支。
+
+概念接口：
 
 ```js
-{ key: "logoMode", type: "select", dataset: "logoMode", ... }
+{
+  type: "weather",
+  name: "实时天气",
+  defaultSize: { w: 3, h: 2 },
+  configSchema: [
+    { key: "city", label: "城市", type: "text", default: "上海" }
+  ],
+  render(ctx) {},
+  update(data) {}
+}
 ```
 
-### 1.3 主题包格式
+这里的 `render` / `update` 只描述内置、受信任代码的目标接口，不表示用户可以提供 JavaScript。
+
+## 3. 纯数据插件边界
+
+计划中的用户插件是声明式数据，不是可执行扩展。首版原语可包括文本、链接、图片、受沙箱限制的 iframe 和倒计时，最终以实现为准。
+
+```yaml
+plugins:
+  - id: my-links
+    type: links
+    name: 我的导航
+    size: { w: 3, h: 2 }
+    config:
+      items:
+        - { label: GitHub, href: "https://github.com", icon: github }
+```
+
+安全约束：
+
+- 只接受已知 `type`，按 schema 校验字段、URL 和尺寸，忽略或拒绝未知能力
+- 不从插件数据加载 JavaScript，不拼接执行 HTML 脚本，不提供任意服务端代码入口
+- `iframe` 使用 sandbox，默认不授予 `allow-same-origin`
+- 外部数据通过受限适配器获取，而不是让插件自由访问内网或本地文件
+- 插件定义随桌面数据备份；账号、会话、SSH 私钥和远程服务凭据不随插件导出
+
+内置插件注册表和用户声明式插件是两层机制：前者是随版本发布、经过审查的代码，后者只有数据表达能力。
+
+## 4. 主题边界
+
+主题包由稳定 id、名称、基准预设和 token 值组成：
 
 ```yaml
 id: my-theme
@@ -64,128 +91,23 @@ tokens:
   cardBlur: 30
   cardRadius: 24
   accentColor: "#7dd3fc"
-  iconShape: squircle
-  logoMode: bleed-cover
 ```
 
-- 存储位置：`state.profile.themeCustom` 保持兼容，值为 `tokens` 的扁平对象
-- `state.profile.themePreset` 为预设 id 或 `custom`
-- 导出主题时生成上面的 YAML，导入时校验未知 token 并忽略
+主题包同样不执行代码。只有内置 token 定义可以把数据映射到 CSS 变量或受限 `dataset`；未知 token 不应生成任意 CSS。
 
-### 1.4 编辑器
+## 5. 数据与部署边界
 
-- 由 `REX_THEME_TOKENS` 自动生成控件，按 `group` 分区
-- 支持 `range` / `color` / `select` / `toggle` / `text`
-- 每个控件实时调用 `applyTheme()`，无需"保存"
-- 提供三个动作：保存为自定义主题、导出 YAML、导入 YAML
+- 浏览器 localStorage 只用于纯静态演示；完整模式以服务端状态为准
+- YAML 适合可移植备份，SQLite 在线备份适合完整本地恢复，两者都不能自动包含外部凭据
+- 快照用于短期恢复，不替代异地备份；当前最多保留 20 份
+- 应用自身提供 HTTP。默认回环绑定是安全边界的一部分，公网访问由 HTTPS 反向代理终止 TLS
+- Docker 镜像固定 Python patch tag 与 psutil 版本；基础镜像 digest 尚需在网络可用时核实固定
 
-## 2. 插件系统
+## 6. 演进顺序
 
-### 2.1 目标
+1. 先落地严格初始化、恢复与健康/就绪语义。
+2. 再划分 Core 与 Remote 的内部边界，并补充本地测试替身。
+3. 将现有组件迁移到 Widgets 注册接口，保持旧 YAML 可导入。
+4. 最后开放经过 schema 限制的纯数据插件与远程日历能力。
 
-- 现有 6 个组件（服务器、文件夹、天气、日历、便签、时钟）用同一套接口
-- 新增组件只需注册，不改 `renderWorkspace`
-- 用户可以不写代码，用声明式配置创建插件
-- 用户插件随 YAML 备份与恢复
-
-### 2.2 插件接口
-
-```js
-{
-  type: "weather",
-  name: "实时天气",
-  description: "按城市展示实时天气与预报",
-  icon: "cloud",
-  defaultSize: { w: 3, h: 2 },
-
-  configSchema: [
-    { key: "title", label: "标题", type: "text", default: "实时天气" },
-    { key: "city", label: "城市", type: "text", default: "上海" }
-  ],
-
-  render(ctx) {
-    // ctx: { item, config, save(), rerender() }
-    const el = document.createElement("section");
-    el.className = "widget-shell";
-    // ...
-    return el;
-  },
-
-  // 可选：声明订阅的运行时数据
-  runtime: "weather"
-}
-```
-
-### 2.3 注册表
-
-```js
-window.StudioloWidgets = new Map();
-
-function registerWidget(plugin) {
-  StudioloWidgets.set(plugin.type, plugin);
-}
-```
-
-- 内置插件在 `web/plugins/builtin.js` 注册
-- `renderWorkspace` 改为查表调用
-- 组件商店按注册表渲染
-- 配置弹窗按 `configSchema` 动态生成字段
-
-### 2.4 用户声明式插件
-
-第一版支持 5 种原始类型，不执行任意 JS：
-
-| 类型 | 用途 | 主要配置 |
-|---|---|---|
-| `text` | 文本 / Markdown | `text` |
-| `links` | 导航链接组 | `items[]` |
-| `image` | 单图或轮播 | `urls[]`, `interval` |
-| `iframe` | 嵌入页面 | `url`, `height` |
-| `countdown` | 倒计时 | `target`, `label` |
-
-示例：
-
-```yaml
-plugins:
-  - id: my-links
-    type: links
-    name: 我的导航
-    size: { w: 3, h: 2 }
-    config:
-      title: 常用
-      items:
-        - { label: GitHub, href: "https://github.com", icon: github }
-        - { label: 邮箱, href: "https://mail.google.com", icon: label }
-```
-
-存储：`state.plugins`，随 YAML 导出与导入。
-
-### 2.5 安全边界
-
-- 用户插件是纯数据，不执行任意 JavaScript
-- `iframe` 使用 `sandbox`，默认不授予 `allow-same-origin`
-- 外部数据源（RSS、JSON API）走服务端代理，域名白名单，类似 favicon
-- 导入插件时校验 `type` 必须在已知原始类型内
-
-### 2.6 数据源
-
-插件可以声明运行时数据需求：
-
-```js
-runtime: "weather"   // 从 /runtime.weather 取值
-runtime: "hosts"     // 从 /runtime.hosts 取值
-```
-
-`applyRuntime` 不再硬编码天气和主机的更新逻辑，而是遍历已挂载插件的 `runtime` 声明，调用插件的 `update(data)`。
-
-## 3. 实施顺序
-
-| 阶段 | 内容 | 风险 |
-|---|---|---|
-| P1 | 设置面板固定高度、内部滚动 | 已完成 |
-| P2 | 主题 token 化 + 动态编辑器 + 主题导入导出 | 中 |
-| P3 | 组件注册表，现有 6 个组件迁移为内置插件 | 中高 |
-| P4 | 声明式用户插件 + 插件管理界面 | 中 |
-| P5 | 插件数据源与服务端代理 | 中 |
-
-每个阶段都保持旧 YAML 可导入，新增字段按默认值补齐。
+每一步都应保留数据兼容和可验证的回滚路径。目标完成后，应把本文对应内容移入“当前实现”，避免设计文档长期超前于代码。

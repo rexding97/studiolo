@@ -1,4 +1,4 @@
-FROM python:3.12-slim
+FROM python:3.12.12-slim-trixie
 
 ARG PIP_INDEX_URL=https://pypi.org/simple
 
@@ -25,10 +25,11 @@ RUN useradd --system --uid 10001 --create-home --home-dir /home/studiolo studiol
  && chown -R studiolo:studiolo /app
 
 USER root
+STOPSIGNAL SIGTERM
 EXPOSE 3002
 VOLUME ["/app/server/data"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD python -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('REXHUB_PORT', '3002') + '/api/v1/health', timeout=4)" || exit 1
+  CMD python -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('REXHUB_PORT', '3002') + '/api/v1/ready', timeout=4)" || exit 1
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]

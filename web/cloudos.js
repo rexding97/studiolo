@@ -255,6 +255,10 @@
 
   function openModal(element, options = {}) {
     if (!element) return;
+    if (element._modalHideTimer) {
+      clearTimeout(element._modalHideTimer);
+      element._modalHideTimer = null;
+    }
     const existing = modalStack.findIndex((entry) => entry.element === element);
     if (existing >= 0) modalStack.splice(existing, 1);
     const entry = { element, options, previousFocus: document.activeElement };
@@ -280,10 +284,20 @@
       return;
     }
     const [entry] = modalStack.splice(index, 1);
-    element.hidden = true;
     element.classList.remove("open");
     if (typeof entry.options.onClose === "function") entry.options.onClose();
     applyModalInert();
+    const exitDuration = Number(entry.options.exitDuration) || 0;
+    if (exitDuration > 0 && !prefersReducedMotion()) {
+      element.inert = true;
+      element.setAttribute("aria-hidden", "true");
+      element._modalHideTimer = setTimeout(() => {
+        element.hidden = true;
+        element._modalHideTimer = null;
+      }, exitDuration);
+    } else {
+      element.hidden = true;
+    }
     if (restoreFocus) {
       const target = entry.previousFocus && entry.previousFocus.isConnected
         ? entry.previousFocus
@@ -2503,9 +2517,22 @@
     foot.className = "widget-foot-metrics";
     if (isServer) {
       foot.innerHTML = `
-        <span data-host-role style="overflow:hidden;text-overflow:ellipsis">${escapeHtml(cfg.role || cfg.badge || "服务器节点")}</span>
-        <span style="flex-shrink:0;white-space:nowrap">CPU <strong data-host-cpu>${escapeHtml(cfg.cpu || "--")}</strong> · MEM <strong data-host-mem>${escapeHtml(cfg.mem || "--")}</strong> · DISK <strong data-host-disk>${escapeHtml(cfg.disk || "--")}</strong></span>
+        <span class="host-sample" data-host-sample>${escapeHtml(cfg.role || cfg.badge || "暂无最近采样")}</span>
+        <span class="host-metrics">CPU <strong data-host-cpu>${escapeHtml(cfg.cpu || "--")}</strong> · MEM <strong data-host-mem>${escapeHtml(cfg.mem || "--")}</strong> · DISK <strong data-host-disk>${escapeHtml(cfg.disk || "--")}</strong></span>
       `;
+      const details = document.createElement("details");
+      details.className = "host-trends";
+      const summary = document.createElement("summary");
+      summary.textContent = "趋势";
+      summary.title = "查看最近 60 点采样趋势";
+      const trend = document.createElement("div");
+      trend.className = "host-trend-popover";
+      trend.dataset.hostTrend = "";
+      details.append(summary, trend);
+      details.addEventListener("toggle", () => paintHostTrend(shell, shell.dataset.hostId));
+      foot.appendChild(details);
+      paintHostTrend(shell, shell.dataset.hostId);
+      loadHostTrend(shell.dataset.hostId);
     } else {
       foot.innerHTML = `
         <span style="overflow:hidden;text-overflow:ellipsis">${escapeHtml(cfg.subtitle || "支持拖入或拖出图标")}</span>
@@ -2513,24 +2540,6 @@
       `;
     }
     shell.appendChild(foot);
-    if (isServer) {
-      const sample = document.createElement("div");
-      sample.className = "host-sample";
-      sample.dataset.hostSample = "";
-      sample.textContent = "暂无最近采样";
-      shell.appendChild(sample);
-      const details = document.createElement("details");
-      details.className = "host-trends";
-      const summary = document.createElement("summary");
-      summary.textContent = "最近趋势（60 点）";
-      const trend = document.createElement("div");
-      trend.dataset.hostTrend = "";
-      details.append(summary, trend);
-      details.addEventListener("toggle", () => paintHostTrend(shell, shell.dataset.hostId));
-      shell.appendChild(details);
-      paintHostTrend(shell, shell.dataset.hostId);
-      loadHostTrend(shell.dataset.hostId);
-    }
 
     shell.addEventListener("click", (e) => {
       if (editMode) return;
@@ -3055,7 +3064,12 @@
     openedFolderWidgetId = widgetId;
     const backdrop = document.getElementById("folderBackdrop");
     renderFolderModalContent(widgetId);
-    openModal(backdrop, { onEscape: closeFolderModal, onClose: () => { openedFolderWidgetId = null; } });
+    openModal(backdrop, {
+      onEscape: closeFolderModal,
+      onClose: () => { openedFolderWidgetId = null; },
+      exitDuration: 220
+    });
+    void backdrop.offsetWidth;
     backdrop.classList.add("open");
   }
 

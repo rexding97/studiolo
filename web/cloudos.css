@@ -2203,9 +2203,20 @@ select.st-select-native {
   outline-offset: 2px;
 }
 .st-select-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.st-select-chevron { position: absolute; right: 12px; color: #7dd3fc; font-size: 17px; pointer-events: none; }
+.st-select-chevron {
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  width: 14px;
+  height: 14px;
+  color: #7dd3fc;
+  pointer-events: none;
+  transform: translateY(-50%);
+  transition: transform 0.18s ease;
+}
+.st-select-chevron svg { display: block; width: 100%; height: 100%; }
 .st-select-workspace .st-select-chevron { right: 13px; }
-.st-select.open .st-select-chevron { transform: rotate(180deg); }
+.st-select.open .st-select-chevron { transform: translateY(-50%) rotate(180deg); }
 .st-select.disabled { opacity: 0.5; }
 .st-select.disabled .st-select-trigger { cursor: not-allowed; }
 .st-select-menu {
@@ -2213,7 +2224,9 @@ select.st-select-native {
   z-index: 10002;
   top: calc(100% + 8px);
   left: 0;
-  right: 0;
+  width: max-content;
+  min-width: 100%;
+  max-width: min(320px, calc(100vw - 32px));
   max-height: min(280px, 45vh);
   padding: 6px;
   overflow-y: auto;
@@ -2230,9 +2243,9 @@ select.st-select-native {
 .st-select.drop-up .st-select-menu { top: auto; bottom: calc(100% + 8px); }
 .st-select-option {
   width: 100%;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 16px;
   align-items: center;
-  justify-content: space-between;
   gap: 12px;
   padding: 10px 11px;
   border: 0;
@@ -2253,15 +2266,15 @@ select.st-select-native {
 .st-select-option[aria-selected="true"] { background: rgba(56, 189, 248, 0.12); }
 .st-select-option:disabled { opacity: 0.42; cursor: not-allowed; }
 .st-select-option-label {
-  flex: 1 1 auto;
+  display: block;
   min-width: 0;
   overflow: hidden;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
-  word-break: keep-all;
+  word-break: normal;
 }
-.st-select-check { flex: 0 0 14px; min-width: 14px; color: #7dd3fc; font-weight: 700; text-align: center; }
+.st-select-check { width: 16px; color: #7dd3fc; font-weight: 700; text-align: center; }
 @media (max-width: 720px) {
   .st-select-workspace { max-width: 150px; flex: 1 1 120px; }
   .st-select-trigger,

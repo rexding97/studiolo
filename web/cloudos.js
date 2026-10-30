@@ -77,6 +77,18 @@
       profile.themePreset = "vision-glass";
       profile.themeCustom = StudioloCore.clone(window.REX_THEME_PRESETS["vision-glass"].config);
     }
+    if (typeof profile.themeWallpaper === "string") {
+      try {
+        const parsed = JSON.parse(profile.themeWallpaper);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) profile.themeWallpaper = parsed;
+        else delete profile.themeWallpaper;
+      } catch (_) {
+        delete profile.themeWallpaper;
+      }
+    } else if (profile.themeWallpaper !== undefined && profile.themeWallpaper !== null &&
+      (typeof profile.themeWallpaper !== "object" || Array.isArray(profile.themeWallpaper))) {
+      delete profile.themeWallpaper;
+    }
     return target;
   }
 
@@ -1725,7 +1737,7 @@
     if (!stage || !photoLayer) return;
     stopDynamicWallpaper();
     const pack = (window.REX_THEME_PACKS || []).find((item) => item.id === state.profile.themePack);
-    const wallpaper = pack && pack.wallpaper;
+    const wallpaper = state.profile.themeWallpaper || (pack && pack.wallpaper);
     stage.dataset.scene = "scene-aurora";
     const fallback = wallpaper && (wallpaper.fallback || (wallpaper.type === "gradient" && wallpaper.value));
     photoLayer.style.backgroundImage = fallback || "none";
@@ -1907,14 +1919,15 @@
     }
 
     const pack = (window.REX_THEME_PACKS || []).find((item) => item.id === state.profile.themePack);
-    if (pack && pack.wallpaper) {
-      const wallpaper = pack.wallpaper;
+    const wallpaper = state.profile.themeWallpaper || (pack && pack.wallpaper);
+    if (wallpaper) {
       const allowDynamic = state.profile.dynamicWallpaper !== false && !prefersReducedMotion();
 
       if (!allowDynamic) {
         stage.dataset.scene = "scene-aurora";
-        if (wallpaper.fallback) {
-          photoLayer.style.backgroundImage = wallpaper.fallback;
+        const fallback = wallpaper.fallback || (wallpaper.type === "gradient" && wallpaper.value);
+        if (fallback) {
+          photoLayer.style.backgroundImage = fallback;
           stage.classList.add("has-photo");
         }
         return;
@@ -3217,8 +3230,10 @@
     function updateToken(token, value) {
       state.profile.themeCustom = Object.assign({}, currentTokens(), { [token.key]: value });
       state.profile.themePreset = "custom";
+      state.profile.activeSavedThemeId = "";
       saveState();
       applyTheme();
+      renderSavedThemes();
     }
 
     function renderTokenEditor() {
@@ -3250,12 +3265,194 @@
       });
     }
 
-    function themeToYaml(tokens) {
-      const lines = ["# Studiolo 主题", "id: custom", 'name: "我的主题"', "tokens:"];
-      (window.REX_THEME_TOKENS || []).forEach((token) => {
-        if (tokens[token.key] === undefined) return;
-        lines.push(`  ${token.key}: ${JSON.stringify(tokens[token.key])}`);
+    function refreshThemePresentation() {
+      applyTheme();
+      applyWallpaper();
+      renderTokenEditor();
+      renderThemeStore();
+      renderSavedThemes();
+    }
+
+    function currentSavedThemes() {
+      if (!Array.isArray(state.profile.savedThemes)) state.profile.savedThemes = [];
+      return state.profile.savedThemes;
+    }
+
+    function captureCurrentTheme(name, id) {
+      const pack = (window.REX_THEME_PACKS || []).find((item) => item.id === state.profile.themePack);
+      return {
+        id: id || `theme-${Date.now()}`,
+        name: String(name || "我的主题").trim().slice(0, 80) || "我的主题",
+        tokens: StudioloCore.clone(currentTokens()),
+        basedOn: state.profile.themePreset || "custom",
+        themePack: state.profile.themePack || "",
+        wallpaper: StudioloCore.clone(state.profile.themeWallpaper || (pack && pack.wallpaper) || null),
+        wallpaperId: state.profile.wallpaper || "",
+        customWallpaperUrl: state.profile.customWallpaperUrl || ""
+      };
+    }
+
+    function applySavedTheme(theme) {
+      try {
+        const tokens = normalizeThemeTokens(theme.tokens);
+        const basedOn = theme.basedOn || "custom";
+        if (basedOn !== "custom" && !window.REX_THEME_PRESETS[basedOn] && !(window.REX_THEME_PACKS || []).some((pack) => pack.id === basedOn)) {
+          throw new Error("basedOn 主题不存在");
+        }
+        if (theme.themePack && !(window.REX_THEME_PACKS || []).some((pack) => pack.id === theme.themePack)) {
+          throw new Error("themePack 主题不存在");
+        }
+        if (theme.wallpaperId && !(window.REX_WALLPAPERS || []).some((wallpaper) => wallpaper.id === theme.wallpaperId)) {
+          throw new Error("内置壁纸不存在");
+        }
+        state.profile.wallpaper = theme.wallpaperId || state.profile.wallpaper || "aurora-peaks";
+        state.profile.themeCustom = tokens;
+        state.profile.themePreset = basedOn;
+        state.profile.themePack = theme.themePack || "";
+        state.profile.themeWallpaper = normalizeThemeWallpaper(theme.wallpaper);
+        state.profile.customWallpaperUrl = theme.customWallpaperUrl
+          ? StudioloCore.assertUrl(theme.customWallpaperUrl, "自定义壁纸", true)
+          : "";
+        state.profile.activeSavedThemeId = theme.id;
+        saveState();
+        refreshThemePresentation();
+      } catch (error) {
+        alert(`应用主题失败：${error.message}`);
+      }
+    }
+
+    function renderSavedThemes() {
+      const host = document.getElementById("savedThemesList");
+      if (!host) return;
+      host.innerHTML = "";
+      const themes = currentSavedThemes();
+      if (!themes.length) {
+        const empty = document.createElement("div");
+        empty.className = "saved-theme-empty";
+        empty.textContent = "尚未保存主题。调整上方或下方设置后点击“保存当前”。";
+        host.appendChild(empty);
+        return;
+      }
+      themes.forEach((theme) => {
+        const row = document.createElement("div");
+        row.className = `saved-theme-row ${state.profile.activeSavedThemeId === theme.id ? "active" : ""}`;
+        const name = document.createElement("strong");
+        name.textContent = theme.name;
+        const actions = document.createElement("div");
+        actions.className = "saved-theme-actions";
+        [
+          ["应用", () => applySavedTheme(theme)],
+          ["覆盖更新", () => {
+            const updated = captureCurrentTheme(theme.name, theme.id);
+            Object.assign(theme, updated);
+            state.profile.activeSavedThemeId = theme.id;
+            saveState();
+            refreshThemePresentation();
+          }],
+          ["重命名", () => {
+            const nextName = window.prompt("主题名称", theme.name);
+            if (!nextName || !nextName.trim()) return;
+            if (currentSavedThemes().some((item) => item.id !== theme.id && item.name === nextName.trim())) return alert("主题名称已存在。");
+            theme.name = nextName.trim().slice(0, 80);
+            saveState();
+            renderSavedThemes();
+          }],
+          ["删除", () => {
+            if (!window.confirm(`删除主题“${theme.name}”？`)) return;
+            state.profile.savedThemes = currentSavedThemes().filter((item) => item.id !== theme.id);
+            if (state.profile.activeSavedThemeId === theme.id) state.profile.activeSavedThemeId = "";
+            saveState();
+            renderSavedThemes();
+          }]
+        ].forEach(([label, handler]) => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "tiny-btn";
+          button.textContent = label;
+          button.addEventListener("click", handler);
+          actions.appendChild(button);
+        });
+        row.append(name, actions);
+        host.appendChild(row);
       });
+    }
+
+    window.renderSavedThemes = renderSavedThemes;
+    document.getElementById("saveCurrentThemeBtn").addEventListener("click", () => {
+      const input = document.getElementById("savedThemeName");
+      const name = input.value.trim();
+      if (!name) return alert("请先输入主题名称。");
+      if (currentSavedThemes().some((theme) => theme.name === name)) return alert("主题名称已存在，可使用“覆盖更新”。");
+      const theme = captureCurrentTheme(name);
+      currentSavedThemes().push(theme);
+      state.profile.activeSavedThemeId = theme.id;
+      input.value = "";
+      saveState();
+      renderSavedThemes();
+    });
+
+    function normalizeThemeTokens(input) {
+      if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("tokens 必须是对象");
+      const known = {};
+      (window.REX_THEME_TOKENS || []).forEach((token) => {
+        const value = input[token.key];
+        if (value === undefined) return;
+        if (token.type === "range") {
+          const number = Number(value);
+          if (!Number.isFinite(number) || number < token.min || number > token.max) throw new Error(`${token.label} 超出范围`);
+          known[token.key] = number;
+        } else if (token.type === "select") {
+          if (!token.options.some((option) => option.value === value)) throw new Error(`${token.label} 选项无效`);
+          known[token.key] = value;
+        } else if (token.type === "toggle") {
+          if (typeof value !== "boolean") throw new Error(`${token.label} 必须是布尔值`);
+          known[token.key] = value;
+        } else if (token.type === "color") {
+          if (typeof value !== "string" || !/^#[0-9a-f]{6}$/i.test(value)) throw new Error(`${token.label} 必须是六位颜色值`);
+          known[token.key] = value;
+        }
+      });
+      if (!Object.keys(known).length) throw new Error("没有可识别的主题参数");
+      return known;
+    }
+
+    function normalizeThemeWallpaper(wallpaper) {
+      if (wallpaper === undefined || wallpaper === null || wallpaper === "") return null;
+      if (!wallpaper || typeof wallpaper !== "object" || Array.isArray(wallpaper)) throw new Error("壁纸格式无效");
+      const dim = wallpaper.dim === undefined ? 0 : Number(wallpaper.dim);
+      if (!Number.isFinite(dim) || dim < 0 || dim > 0.9) throw new Error("壁纸暗度无效");
+      if (wallpaper.type === "canvas") {
+        if (!["aurora", "starfield", "mesh"].includes(wallpaper.scene)) throw new Error("Canvas 场景无效");
+        if (wallpaper.fallback && !StudioloCore.safeColor(wallpaper.fallback)) throw new Error("Canvas 回退渐变无效");
+        return {
+          type: "canvas", scene: wallpaper.scene, dim,
+          fallback: StudioloCore.safeColor(wallpaper.fallback, "linear-gradient(135deg, #0f172a, #020617)")
+        };
+      }
+      if (wallpaper.type === "gradient") {
+        const value = StudioloCore.safeColor(wallpaper.value);
+        if (!value) throw new Error("渐变壁纸无效");
+        return { type: "gradient", value, dim };
+      }
+      if (wallpaper.type === "video") {
+        const value = StudioloCore.assertUrl(wallpaper.value, "视频壁纸", false);
+        const poster = wallpaper.poster ? StudioloCore.assertUrl(wallpaper.poster, "视频封面", true) : "";
+        return { type: "video", value, poster, dim };
+      }
+      throw new Error("壁纸类型无效");
+    }
+
+    function themeToYaml(tokens) {
+      const name = document.getElementById("savedThemeName").value.trim() || "我的主题";
+      const lines = ["# Studiolo 主题", "id: custom", `name: ${JSON.stringify(name)}`, `basedOn: ${JSON.stringify(state.profile.themePreset || "custom")}`];
+      if (state.profile.themePack) lines.push(`themePack: ${JSON.stringify(state.profile.themePack)}`);
+      lines.push("tokens:");
+      (window.REX_THEME_TOKENS || []).forEach((token) => {
+        if (tokens[token.key] !== undefined) lines.push(`  ${token.key}: ${JSON.stringify(tokens[token.key])}`);
+      });
+      if (state.profile.themeWallpaper) lines.push(`wallpaperJson: ${JSON.stringify(JSON.stringify(state.profile.themeWallpaper))}`);
+      if (state.profile.wallpaper) lines.push(`wallpaperId: ${JSON.stringify(state.profile.wallpaper)}`);
+      if (state.profile.customWallpaperUrl) lines.push(`customWallpaperUrl: ${JSON.stringify(state.profile.customWallpaperUrl)}`);
       return lines.join("\n") + "\n";
     }
 
@@ -3263,9 +3460,9 @@
       const trimmed = text.trim();
       if (trimmed.startsWith("{")) {
         const data = JSON.parse(trimmed);
-        return data.tokens || data;
+        return data.tokens ? data : { tokens: data };
       }
-      const tokens = {};
+      const result = { tokens: {} };
       let inTokens = false;
       text.split(/\r?\n/).forEach((raw) => {
         const line = raw.replace(/\s+$/, "");
@@ -3274,71 +3471,116 @@
           inTokens = true;
           return;
         }
-        if (!inTokens) return;
-        const match = line.match(/^\s+([A-Za-z0-9_]+)\s*:\s*(.*)$/);
-        if (match) tokens[match[1]] = parseScalar(match[2]);
+        const match = line.match(/^(name|basedOn|themePack|wallpaperId|customWallpaperUrl|wallpaperJson)\s*:\s*(.*)$/);
+        if (match) {
+          const value = parseScalar(match[2]);
+          if (match[1] === "wallpaperJson") {
+            try { result.wallpaper = JSON.parse(String(value)); }
+            catch (_) { throw new Error("wallpaperJson 损坏"); }
+          } else result[match[1]] = value;
+          return;
+        }
+        if (inTokens) {
+          const tokenMatch = line.match(/^\s+([A-Za-z0-9_]+)\s*:\s*(.*)$/);
+          if (tokenMatch) result.tokens[tokenMatch[1]] = parseScalar(tokenMatch[2]);
+        }
       });
-      return tokens;
+      return result;
     }
 
-    function applyThemeTokens(tokens) {
-      const known = {};
-      (window.REX_THEME_TOKENS || []).forEach((token) => {
-        if (tokens[token.key] !== undefined) known[token.key] = tokens[token.key];
-      });
-      if (!Object.keys(known).length) throw new Error("没有可识别的主题参数");
-
-      state.profile.themeCustom = Object.assign({}, currentTokens(), known);
-      state.profile.themePreset = "custom";
+    function applyThemeTokens(packageData) {
+      const data = packageData && packageData.tokens ? packageData : { tokens: packageData };
+      const tokens = normalizeThemeTokens(data.tokens);
+      const basedOn = data.basedOn || "custom";
+      const preset = window.REX_THEME_PRESETS[basedOn];
+      if (basedOn !== "custom" && !preset && !(window.REX_THEME_PACKS || []).some((pack) => pack.id === basedOn)) {
+        throw new Error("basedOn 主题不存在");
+      }
+      if (data.themePack && !(window.REX_THEME_PACKS || []).some((pack) => pack.id === data.themePack)) {
+        throw new Error("themePack 主题不存在");
+      }
+      const basedOnPack = (window.REX_THEME_PACKS || []).find((pack) => pack.id === basedOn);
+      const explicitPack = (window.REX_THEME_PACKS || []).find((pack) => pack.id === data.themePack);
+      const base = preset ? preset.config : ((explicitPack || basedOnPack) ? (explicitPack || basedOnPack).tokens : currentTokens());
+      if (data.wallpaperId && !(window.REX_WALLPAPERS || []).some((wallpaper) => wallpaper.id === data.wallpaperId)) {
+        throw new Error("内置壁纸不存在");
+      }
+      state.profile.wallpaper = data.wallpaperId || state.profile.wallpaper || "aurora-peaks";
+      state.profile.themeCustom = Object.assign({}, base, tokens);
+      state.profile.themePreset = basedOn;
+      state.profile.themePack = data.themePack || "";
+      state.profile.themeWallpaper = normalizeThemeWallpaper(data.wallpaper);
+      state.profile.customWallpaperUrl = data.customWallpaperUrl ? StudioloCore.assertUrl(data.customWallpaperUrl, "自定义壁纸", true) : "";
+      state.profile.activeSavedThemeId = "";
       saveState();
-      applyTheme();
-      renderTokenEditor();
+      refreshThemePresentation();
     }
 
     window.openThemeStudio = function () {
       renderTokenEditor();
+      renderSavedThemes();
     };
 
     function applyThemePack(pack) {
       state.profile.themePack = pack.id;
-      state.profile.themePreset = "custom";
-      state.profile.themeCustom = Object.assign({}, state.profile.themeCustom || {}, pack.tokens || {});
+      state.profile.themePreset = pack.id;
+      state.profile.themeCustom = Object.assign({}, window.REX_THEME_PRESETS["vision-glass"].config, pack.tokens || {});
+      state.profile.themeWallpaper = null;
       state.profile.customWallpaperUrl = "";
+      state.profile.activeSavedThemeId = "";
       saveState();
-      applyTheme();
-      applyWallpaper();
-      if (window.openThemeStudio) window.openThemeStudio();
-      if (window.renderThemeStore) window.renderThemeStore();
+      refreshThemePresentation();
+    }
+
+    function applyPreset(preset) {
+      state.profile.themePreset = preset.id;
+      state.profile.themePack = "";
+      state.profile.themeCustom = StudioloCore.clone(preset.config);
+      state.profile.themeWallpaper = null;
+      state.profile.customWallpaperUrl = "";
+      state.profile.activeSavedThemeId = "";
+      saveState();
+      refreshThemePresentation();
     }
 
     function renderThemeStore() {
       const host = document.getElementById("themeStoreGrid");
       if (!host) return;
       host.innerHTML = "";
-
-      (window.REX_THEME_PACKS || []).forEach((pack) => {
-        const active = state.profile.themePack === pack.id;
-        const preview =
-          (pack.wallpaper && (pack.wallpaper.fallback || pack.wallpaper.value)) ||
-          "linear-gradient(135deg, #1e293b, #0f172a)";
+      function addSection(title, items, renderer) {
+        const heading = document.createElement("h4");
+        heading.className = "theme-store-section-title";
+        heading.textContent = title;
+        host.appendChild(heading);
+        const grid = document.createElement("div");
+        grid.className = "theme-store-grid";
+        items.forEach((item) => grid.appendChild(renderer(item)));
+        host.appendChild(grid);
+      }
+      addSection("完整主题 · 含壁纸", window.REX_THEME_PACKS || [], (pack) => {
+        const active = state.profile.themePack === pack.id && !state.profile.activeSavedThemeId;
+        const preview = (pack.wallpaper && (pack.wallpaper.fallback || pack.wallpaper.value)) || "linear-gradient(135deg, #1e293b, #0f172a)";
         const card = document.createElement("div");
         card.className = `theme-store-card ${active ? "active" : ""}`;
         card.innerHTML = `
-          <div class="theme-store-preview" style="background:${preview}">
-            <span class="theme-store-badge">${escapeHtml(pack.badge || "")}</span>
-          </div>
-          <div class="theme-store-meta">
-            <strong>${escapeHtml(pack.name)}</strong>
-            <span>${escapeHtml(pack.author || "")}</span>
-          </div>
+          <div class="theme-store-preview" style="background:${preview}"><span class="theme-store-badge">${escapeHtml(pack.badge || "")}</span></div>
+          <div class="theme-store-meta"><strong>${escapeHtml(pack.name)}</strong><span>${escapeHtml(pack.author || "")}</span></div>
           <div class="theme-store-desc">${escapeHtml(pack.desc || "")}</div>
-          <button type="button" class="glass-btn theme-store-apply">${active ? "✓ 当前使用" : "应用主题"}</button>
-        `;
-        card.querySelector(".theme-store-apply").addEventListener("click", (event) => {
-          event.stopPropagation();
-          applyThemePack(pack);
-        });
-        host.appendChild(card);
+          <button type="button" class="glass-btn theme-store-apply">${active ? "✓ 当前使用" : "应用主题"}</button>`;
+        card.querySelector(".theme-store-apply").addEventListener("click", () => applyThemePack(pack));
+        return card;
+      });
+      addSection("基础风格 · 自由搭配壁纸", Object.values(window.REX_THEME_PRESETS || {}), (preset) => {
+        const active = state.profile.themePreset === preset.id && !state.profile.themePack && !state.profile.activeSavedThemeId;
+        const card = document.createElement("div");
+        card.className = `theme-store-card ${active ? "active" : ""}`;
+        card.innerHTML = `
+          <div class="theme-store-preview" style="background:linear-gradient(145deg, ${preset.config.accentColor}, #0f172a)"><span class="theme-store-badge">${escapeHtml(preset.badge || "基础")}</span></div>
+          <div class="theme-store-meta"><strong>${escapeHtml(preset.name)}</strong></div>
+          <div class="theme-store-desc">${escapeHtml(preset.desc || "")}</div>
+          <button type="button" class="glass-btn theme-store-apply">${active ? "✓ 当前使用" : "应用风格"}</button>`;
+        card.querySelector(".theme-store-apply").addEventListener("click", () => applyPreset(preset));
+        return card;
       });
     }
 
@@ -3374,14 +3616,7 @@
     });
 
     document.getElementById("resetThemeBtn").addEventListener("click", () => {
-      const preset = window.REX_THEME_PRESETS["vision-glass"];
-      state.profile.themePreset = preset.id;
-      state.profile.themePack = "";
-      state.profile.themeCustom = JSON.parse(JSON.stringify(preset.config));
-      saveState();
-      applyTheme();
-      applyWallpaper();
-      renderTokenEditor();
+      applyPreset(window.REX_THEME_PRESETS["vision-glass"]);
     });
   }
 
@@ -3996,7 +4231,13 @@
    * 16. YAML 导出 / 导入中心
    * ========================================================= */
   function stateToYaml(st) {
-    return StudioloCore.exportYaml(st);
+    const clone = StudioloCore.clone(st);
+    const savedThemes = clone.profile && Array.isArray(clone.profile.savedThemes)
+      ? StudioloCore.clone(clone.profile.savedThemes)
+      : null;
+    if (clone.profile) delete clone.profile.savedThemes;
+    const yaml = StudioloCore.exportYaml(clone);
+    return savedThemes === null ? yaml : `${yaml}savedThemesJson: ${JSON.stringify(JSON.stringify(savedThemes))}\n`;
   }
 
   function parseScalar(raw) {
@@ -4017,7 +4258,21 @@
   }
 
   function yamlToState(yamlText) {
-    return StudioloCore.parseYaml(yamlText);
+    const match = String(yamlText).match(/^savedThemesJson\s*:\s*(.*)$/m);
+    if (!match) return StudioloCore.parseYaml(yamlText);
+    let savedThemes;
+    try {
+      savedThemes = JSON.parse(String(parseScalar(match[1])));
+    } catch (_) {
+      throw new Error("savedThemesJson 损坏");
+    }
+    if (!Array.isArray(savedThemes) || savedThemes.some((theme) => !theme || typeof theme !== "object" || Array.isArray(theme))) {
+      throw new Error("savedThemesJson 必须是主题对象数组");
+    }
+    const cleaned = String(yamlText).split(/\r?\n/).filter((line) => !/^savedThemesJson\s*:/.test(line)).join("\n");
+    const parsed = StudioloCore.parseYaml(cleaned);
+    parsed.profile.savedThemes = savedThemes;
+    return parsed;
   }
 
   function initConfigModal() {
@@ -4039,10 +4294,14 @@
           state.profile.wallpaper = wp.id;
           state.profile.customWallpaperUrl = "";
           state.profile.themePack = "";
+          state.profile.themeWallpaper = null;
+          state.profile.activeSavedThemeId = "";
           customUrlInput.value = "";
           saveState();
           applyWallpaper();
           renderSwatches();
+          if (window.renderSavedThemes) window.renderSavedThemes();
+          if (window.renderThemeStore) window.renderThemeStore();
           yamlBox.value = stateToYaml(state);
         });
         wpGrid.appendChild(d);
@@ -4064,9 +4323,14 @@
         return;
       }
       state.profile.customWallpaperUrl = url;
+      state.profile.themePack = "";
+      state.profile.themeWallpaper = null;
+      state.profile.activeSavedThemeId = "";
       saveState();
       applyWallpaper();
       renderSwatches();
+      if (window.renderSavedThemes) window.renderSavedThemes();
+      if (window.renderThemeStore) window.renderThemeStore();
       yamlBox.value = stateToYaml(state);
     });
 

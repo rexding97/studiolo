@@ -17,6 +17,9 @@
   --theme-icon-radius: 18px;
   --theme-icon-scale: 1;
   --theme-grid-gap: 18px;
+  --theme-card-padding: 16px;
+  --theme-card-border-width: 1px;
+  --theme-logo-brightness: 1;
 
   --text-secondary: rgba(255, 255, 255, 0.78);
   --text-muted: rgba(255, 255, 255, 0.56);
@@ -35,6 +38,7 @@
 }
 
 html {
+  color-scheme: dark;
   font-size: var(--app-font-size, 16px);
 }
 
@@ -543,6 +547,7 @@ body[data-icon-gloss="false"] .app-squircle::after { display: none; }
   opacity: 0;
   transform: scale(0.88);
   transition: opacity 0.2s ease, transform 0.2s var(--bounce);
+  filter: brightness(var(--theme-logo-brightness, 1));
 }
 
 body[data-logo-mode="badge-pad"] .app-real-logo {
@@ -563,7 +568,7 @@ body[data-logo-mode="raw-clean"] .app-real-logo {
   padding: 0;
 }
 body[data-logo-mode="mono-white"] .app-real-logo {
-  filter: brightness(0) invert(1);
+  filter: brightness(var(--theme-logo-brightness, 1)) brightness(0) invert(1);
 }
 
 .app-squircle.has-real-logo .app-real-logo {
@@ -650,9 +655,9 @@ body.edit-mode .app-badge-edit { display: grid; }
 .widget-shell {
   position: relative;
   border-radius: var(--theme-card-radius);
-  padding: 13px 16px 12px;
+  padding: 13px var(--theme-card-padding) 12px;
   background: var(--theme-card-bg);
-  border: 1px solid var(--theme-card-border);
+  border: var(--theme-card-border-width) solid var(--theme-card-border);
   box-shadow: var(--theme-card-shadow);
   backdrop-filter: blur(var(--theme-card-blur)) saturate(180%);
   -webkit-backdrop-filter: blur(var(--theme-card-blur)) saturate(180%);
@@ -2082,4 +2087,76 @@ body.dock-on .desktop-shell { padding-bottom: 96px; }
   .version-layout { grid-template-columns: 1fr; }
   .version-list { max-height: 180px; }
   .calendar-event { flex-direction: column; gap: 0; }
+}
+
+select,
+.form-field select,
+.workspace-select {
+  color-scheme: dark;
+  border: 1px solid rgba(125, 211, 252, 0.46);
+  background-color: #111c31;
+  color: #f8fbff;
+}
+select option,
+select optgroup {
+  background-color: #111c31;
+  color: #f8fbff;
+}
+select:hover { border-color: #7dd3fc; }
+select:focus-visible {
+  border-color: #7dd3fc;
+  outline: 2px solid rgba(56, 189, 248, 0.5);
+  outline-offset: 2px;
+}
+.workspace-select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%237dd3fc' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  background-size: 14px;
+  cursor: pointer;
+}
+.theme-store-section-title,
+.theme-store-grid > .theme-store-grid { grid-column: 1 / -1; }
+.theme-store-section-title { margin: 8px 0 0; font-size: 14px; }
+.saved-theme-panel {
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.045);
+}
+.saved-theme-heading h4 { font-size: 14px; }
+.saved-theme-heading p { margin-top: 4px; color: var(--text-secondary); font-size: 11.5px; }
+.saved-theme-create { display: flex; gap: 8px; margin-top: 12px; }
+.saved-theme-create input {
+  min-width: 0;
+  flex: 1;
+  padding: 9px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 11px;
+  background: #111c31;
+  color: #fff;
+}
+.saved-themes-list { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
+.saved-theme-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 9px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.saved-theme-row.active { box-shadow: inset 0 0 0 1px var(--theme-accent); }
+.saved-theme-row strong { overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+.saved-theme-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; }
+.saved-theme-empty { color: var(--text-secondary); font-size: 11.5px; }
+@media (max-width: 720px) {
+  select, .form-field select, .workspace-select { font-size: 16px; }
+  .saved-theme-row { align-items: flex-start; flex-direction: column; }
+  .saved-theme-actions { justify-content: flex-start; }
+  .saved-theme-create { flex-wrap: wrap; }
+  .saved-theme-create input { flex-basis: 100%; font-size: 16px; }
 }

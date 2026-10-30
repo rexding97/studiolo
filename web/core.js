@@ -341,6 +341,7 @@
     Object.keys(st.profile).forEach((key) => {
       if (!/^[A-Za-z0-9_]+$/.test(key)) return;
       if (key === "themeCustom") lines.push(`  themeCustomJson: ${yamlScalar(JSON.stringify(st.profile[key] || {}))}`);
+      else if (key === "themeWallpaper") lines.push(`  themeWallpaperJson: ${yamlScalar(JSON.stringify(st.profile[key] || null))}`);
       else lines.push(`  ${key}: ${yamlScalar(st.profile[key])}`);
     });
     lines.push("layout:");
@@ -442,14 +443,18 @@
       if (section === "profile") {
         const match = line.match(/^\s+([A-Za-z0-9_]+)\s*:\s*(.*)$/);
         if (!match) throw new Error(`第 ${lineIndex + 1} 行 profile 格式无效`);
-        if (match[1] === "themeCustomJson") {
+        if (match[1] === "themeCustomJson" || match[1] === "themeWallpaperJson") {
+          const key = match[1] === "themeCustomJson" ? "themeCustom" : "themeWallpaper";
           const json = String(parseScalar(match[2]));
           try {
-            next.profile.themeCustom = json.trim() ? JSON.parse(json) : {};
+            next.profile[key] = json.trim() ? JSON.parse(json) : (key === "themeCustom" ? {} : null);
           } catch (_) {
-            throw new Error(`第 ${lineIndex + 1} 行 themeCustomJson 损坏`);
+            throw new Error(`第 ${lineIndex + 1} 行 ${match[1]} 损坏`);
           }
-          if (!isObject(next.profile.themeCustom)) throw new Error("themeCustomJson 必须是对象");
+          if (key === "themeCustom" && !isObject(next.profile[key])) throw new Error("themeCustomJson 必须是对象");
+          if (key === "themeWallpaper" && next.profile[key] !== null && !isObject(next.profile[key])) {
+            throw new Error("themeWallpaperJson 必须是对象或 null");
+          }
         } else next.profile[match[1]] = parseScalar(match[2]);
         return;
       }

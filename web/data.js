@@ -263,6 +263,28 @@ window.REX_THEME_TOKENS = [
     apply: (v) => ({ "--theme-grid-gap": `${v}px` })
   },
   {
+    group: "surface",
+    key: "cardPadding",
+    label: "卡片水平内边距 (px)",
+    type: "range",
+    min: 8,
+    max: 32,
+    step: 1,
+    default: 16,
+    apply: (v) => ({ "--theme-card-padding": `${v}px` })
+  },
+  {
+    group: "surface",
+    key: "cardBorderWidth",
+    label: "卡片边框宽度 (px)",
+    type: "range",
+    min: 0,
+    max: 4,
+    step: 0.5,
+    default: 1,
+    apply: (v) => ({ "--theme-card-border-width": `${v}px` })
+  },
+  {
     group: "icon",
     key: "iconShape",
     label: "图标几何形状",
@@ -326,6 +348,17 @@ window.REX_THEME_TOKENS = [
     dataset: "iconGloss"
   },
   {
+    group: "icon",
+    key: "iconBrightness",
+    label: "真实 Logo 亮度",
+    type: "range",
+    min: 0.5,
+    max: 1.5,
+    step: 0.05,
+    default: 1,
+    apply: (v) => ({ "--theme-logo-brightness": String(v) })
+  },
+  {
     group: "color",
     key: "accentColor",
     label: "全局强调色",
@@ -340,6 +373,14 @@ window.REX_THEME_TOKENS = [
     type: "color",
     default: "#ffffff",
     apply: (v) => ({ "--theme-text": v })
+  },
+  {
+    group: "color",
+    key: "textSecondary",
+    label: "次级文字颜色",
+    type: "color",
+    default: "#c7c7c7",
+    apply: (v) => ({ "--text-secondary": v })
   },
   {
     group: "type",
@@ -507,8 +548,157 @@ window.REX_THEME_PACKS = [
     },
     wallpaper: {
       type: "gradient",
-      value: "radial-gradient(1200px 800px at 20% 10%, #1e293b 0%, #0b1120 55%, #020617 100%)",
+      value: "linear-gradient(135deg, #1e293b 0%, #0b1120 55%, #020617 100%)",
       dim: 0
+    }
+  },
+  {
+    id: "forest-retreat",
+    name: "森林秘境",
+    author: "Studiolo",
+    desc: "深绿林冠与清透薄荷高光，安静自然",
+    badge: "动态壁纸",
+    tokens: {
+      cardBgOpacity: 0.13, cardBlur: 36, cardRadius: 28, cardBorderOpacity: 0.24,
+      cardShadowStrength: 0.44, accentColor: "#6ee7b7", textPrimary: "#ecfdf5",
+      textSecondary: "#a7f3d0", iconShape: "squircle", iconSurface: "frosted",
+      logoMode: "raw-clean", iconScale: 1, iconGloss: true, gridGap: 20,
+      cardPadding: 18, cardBorderWidth: 1
+    },
+    wallpaper: {
+      type: "canvas", scene: "aurora", dim: 0.4,
+      fallback: "linear-gradient(145deg, #022c22 0%, #064e3b 48%, #166534 100%)"
+    }
+  },
+  {
+    id: "abyssal-blue",
+    name: "深海蓝境",
+    author: "Studiolo",
+    desc: "深海蓝黑与冷青波光，强调专注和层次",
+    badge: "动态壁纸",
+    tokens: {
+      cardBgOpacity: 0.1, cardBlur: 42, cardRadius: 24, cardBorderOpacity: 0.2,
+      cardShadowStrength: 0.6, accentColor: "#22d3ee", textPrimary: "#ecfeff",
+      textSecondary: "#a5f3fc", iconShape: "rounded", iconSurface: "dark-matte",
+      logoMode: "bleed-cover", iconScale: 0.98, iconGloss: false, gridGap: 16,
+      cardPadding: 16, cardBorderWidth: 1, iconBrightness: 1.1
+    },
+    wallpaper: {
+      type: "canvas", scene: "starfield", dim: 0.46,
+      fallback: "linear-gradient(165deg, #020617 0%, #082f49 55%, #155e75 100%)"
+    }
+  },
+  {
+    id: "kyoto-dusk",
+    name: "京都暮色",
+    author: "Studiolo",
+    desc: "朱红、梅紫与暗夜过渡，像暮色中的山城",
+    badge: "静态",
+    tokens: {
+      cardBgOpacity: 0.2, cardBlur: 28, cardRadius: 26, cardBorderOpacity: 0.32,
+      cardShadowStrength: 0.46, accentColor: "#fb7185", textPrimary: "#fff1f2",
+      textSecondary: "#fecdd3", iconShape: "rounded", iconSurface: "gradient",
+      logoMode: "badge-pad", iconScale: 1.02, iconGloss: true, gridGap: 18,
+      cardPadding: 17, cardBorderWidth: 1
+    },
+    wallpaper: {
+      type: "gradient",
+      value: "linear-gradient(155deg, #180b2e 0%, #701a4b 52%, #c2410c 100%)",
+      dim: 0.12
+    }
+  },
+  {
+    id: "rose-atelier",
+    name: "玫瑰工坊",
+    author: "Studiolo",
+    desc: "玫瑰粉与柔和圆弧，轻盈但保持深色对比",
+    badge: "动态壁纸",
+    tokens: {
+      cardBgOpacity: 0.24, cardBlur: 34, cardRadius: 34, cardBorderOpacity: 0.36,
+      cardShadowStrength: 0.36, accentColor: "#f9a8d4", textPrimary: "#fdf2f8",
+      textSecondary: "#fbcfe8", iconShape: "circle", iconSurface: "frosted",
+      logoMode: "badge-pad", iconScale: 1.04, iconGloss: true, gridGap: 22,
+      cardPadding: 20, cardBorderWidth: 1.5
+    },
+    wallpaper: {
+      type: "canvas", scene: "mesh", dim: 0.34,
+      fallback: "linear-gradient(145deg, #500f3c 0%, #9d174d 55%, #be185d 100%)"
+    }
+  },
+  {
+    id: "lavender-dream",
+    name: "薰衣草梦境",
+    author: "Studiolo",
+    desc: "淡紫云雾与宽松排版，柔和而不低对比",
+    badge: "静态",
+    tokens: {
+      cardBgOpacity: 0.18, cardBlur: 44, cardRadius: 30, cardBorderOpacity: 0.3,
+      cardShadowStrength: 0.34, accentColor: "#c4b5fd", textPrimary: "#f5f3ff",
+      textSecondary: "#ddd6fe", iconShape: "squircle", iconSurface: "frosted",
+      logoMode: "raw-clean", iconScale: 1, iconGloss: true, gridGap: 24,
+      cardPadding: 20, cardBorderWidth: 1, fontFamily: "rounded"
+    },
+    wallpaper: {
+      type: "gradient",
+      value: "linear-gradient(150deg, #24153f 0%, #5b3a8c 50%, #8064a2 100%)",
+      dim: 0.08
+    }
+  },
+  {
+    id: "carbon-mono",
+    name: "碳黑单色",
+    author: "Studiolo",
+    desc: "纯灰阶、锐利边界与单色 Logo，极简专业",
+    badge: "静态 · 单色",
+    tokens: {
+      cardBgOpacity: 0.16, cardBlur: 18, cardRadius: 14, cardBorderOpacity: 0.3,
+      cardShadowStrength: 0.58, accentColor: "#e5e7eb", textPrimary: "#f9fafb",
+      textSecondary: "#d1d5db", iconShape: "sharp", iconSurface: "dark-matte",
+      logoMode: "mono-white", iconScale: 0.96, iconGloss: false, gridGap: 14,
+      cardPadding: 14, cardBorderWidth: 1.5, iconBrightness: 0.9, fontFamily: "mono"
+    },
+    wallpaper: {
+      type: "gradient",
+      value: "linear-gradient(145deg, #000000 0%, #171717 55%, #333333 100%)",
+      dim: 0.2
+    }
+  },
+  {
+    id: "warm-sand",
+    name: "暖砂假日",
+    author: "Studiolo",
+    desc: "暖砂、陶土与奶油高光，温和亲切",
+    badge: "静态",
+    tokens: {
+      cardBgOpacity: 0.22, cardBlur: 30, cardRadius: 32, cardBorderOpacity: 0.34,
+      cardShadowStrength: 0.38, accentColor: "#fcd34d", textPrimary: "#fffbeb",
+      textSecondary: "#fde68a", iconShape: "rounded", iconSurface: "gradient",
+      logoMode: "badge-pad", iconScale: 1.03, iconGloss: true, gridGap: 20,
+      cardPadding: 19, cardBorderWidth: 1, fontFamily: "serif"
+    },
+    wallpaper: {
+      type: "gradient",
+      value: "linear-gradient(150deg, #292018 0%, #78550f 52%, #b45309 100%)",
+      dim: 0.16
+    }
+  },
+  {
+    id: "terminal-green",
+    name: "终端绿",
+    author: "Studiolo",
+    desc: "黑底磷光绿、等宽字体和紧凑网格，复古终端",
+    badge: "动态壁纸 · 等宽",
+    tokens: {
+      cardBgOpacity: 0.12, cardBlur: 12, cardRadius: 10, cardBorderOpacity: 0.4,
+      cardShadowStrength: 0.5, accentColor: "#4ade80", textPrimary: "#dcfce7",
+      textSecondary: "#86efac", iconShape: "sharp", iconSurface: "neon-ring",
+      logoMode: "mono-white", iconScale: 0.9, iconGloss: false, gridGap: 12,
+      cardPadding: 12, cardBorderWidth: 1.5, iconBrightness: 0.85,
+      fontFamily: "mono", headingWeight: "700", baseFontSize: 15
+    },
+    wallpaper: {
+      type: "canvas", scene: "aurora", dim: 0.55,
+      fallback: "linear-gradient(150deg, #010503 0%, #052e16 58%, #14532d 100%)"
     }
   }
 ];

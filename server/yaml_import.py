@@ -73,12 +73,26 @@ def _parse_yaml(text):
             match = re.match(r"^\s+([A-Za-z0-9_]+)\s*:\s*(.*)$", line)
             if not match:
                 raise ImportError(f"第 {line_number} 行 profile 格式无效")
-            key, value = match.group(1), _scalar(match.group(2))
+            key = match.group(1)
+            try:
+                value = _scalar(match.group(2))
+            except ImportError:
+                if key == "themeWallpaperJson":
+                    raise ImportError(f"第 {line_number} 行 themeWallpaperJson 损坏") from None
+                raise
             if key == "themeCustomJson":
                 try:
                     state["profile"]["themeCustom"] = json.loads(value) if value else None
                 except (TypeError, json.JSONDecodeError):
                     raise ImportError(f"第 {line_number} 行 themeCustomJson 无效") from None
+            elif key == "themeWallpaperJson":
+                try:
+                    state["profile"]["themeWallpaper"] = json.loads(value)
+                except (TypeError, json.JSONDecodeError):
+                    raise ImportError(f"第 {line_number} 行 themeWallpaperJson 损坏") from None
+                if state["profile"]["themeWallpaper"] is not None and not isinstance(
+                        state["profile"]["themeWallpaper"], dict):
+                    raise ImportError(f"第 {line_number} 行 themeWallpaperJson 必须是对象或 null")
             else:
                 state["profile"][key] = value
             continue
@@ -105,7 +119,15 @@ def _parse_yaml(text):
         root_field = re.match(r"^([A-Za-z0-9_]+)\s*:\s*(.*)$", line)
         if root_field:
             key, raw_value = root_field.group(1), root_field.group(2)
-            if key in ("pluginsJson", "workspacesJson"):
+            if key == "savedThemesJson":
+                try:
+                    state["profile"]["savedThemes"] = json.loads(_scalar(raw_value))
+                except (ImportError, TypeError, json.JSONDecodeError):
+                    raise ImportError(f"第 {line_number} 行 savedThemesJson 损坏") from None
+                themes = state["profile"]["savedThemes"]
+                if not isinstance(themes, list) or any(not isinstance(theme, dict) for theme in themes):
+                    raise ImportError(f"第 {line_number} 行 savedThemesJson 必须是主题对象数组")
+            elif key in ("pluginsJson", "workspacesJson"):
                 target = key[:-4]
                 try:
                     state[target] = json.loads(_scalar(raw_value))

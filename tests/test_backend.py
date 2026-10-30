@@ -78,12 +78,17 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual({"future": True}, extended["plugins"])
         self.assertEqual("retained", extended["custom"])
 
-    def test_frontend_yaml_aliases_survive_import_and_snapshot_restore(self):
+    def test_frontend_yaml_aliases_survive_cli_import_and_snapshot_restore(self):
         def scalar(value):
             return json.dumps(value, ensure_ascii=False)
 
         plugins = [{"id": "calendar", "enabled": True, "settings": {"view": "month"}}]
         mobile = {"x": 2, "y": 5, "w": 3, "h": 4}
+        theme_wallpaper = {"type": "gradient", "value": "aurora", "overlay": {"opacity": 0.4}}
+        saved_themes = [
+            {"id": "theme-one", "name": "极光", "themeWallpaper": theme_wallpaper},
+            {"id": "theme-two", "name": "简洁", "themeWallpaper": None},
+        ]
         workspaces = [
             {"id": "workspace-one", "name": "主桌面", "layout": [], "apps": []},
             {"id": "workspace-two", "name": "实验室", "layout": [
@@ -93,27 +98,43 @@ class DatabaseTests(unittest.TestCase):
         ]
         lines = [
             "# Studiolo 桌面 2D 坐标与主题配置文件", 'version: "5.0"', "profile:",
-            '  title: "Studio"', '  activeWorkspaceId: "workspace-two"', "layout:",
-            '  - id: "weather"', '    kind: "widget"', "    x: 1", "    y: 1", "    w: 4", "    h: 2",
+            '  title: "Studio"', '  activeWorkspaceId: "workspace-two"',
+            f"  themeWallpaperJson: {scalar(json.dumps(theme_wallpaper, separators=(',', ':')))}",
+            "layout:", '  - id: "weather"', '    kind: "widget"', "    x: 1", "    y: 1", "    w: 4", "    h: 2",
             f"    mobileJson: {scalar(json.dumps(mobile, separators=(',', ':')))}",
             '    widgetType: "weather"',
             f"    configJson: {scalar(json.dumps({'city': '上海'}, separators=(',', ':')))}",
             "apps: []",
             f"pluginsJson: {scalar(json.dumps(plugins, ensure_ascii=False, separators=(',', ':')))}",
             f"workspacesJson: {scalar(json.dumps(workspaces, ensure_ascii=False, separators=(',', ':')))}",
+            f"savedThemesJson: {scalar(json.dumps(saved_themes, ensure_ascii=False, separators=(',', ':')))}",
         ]
         state = yaml_import.parse("\n".join(lines) + "\n")
         self.assertEqual(plugins, state["plugins"])
         self.assertEqual(workspaces, state["workspaces"])
         self.assertEqual("workspace-two", state["profile"]["activeWorkspaceId"])
+        self.assertEqual(theme_wallpaper, state["profile"]["themeWallpaper"])
+        self.assertEqual(saved_themes, state["profile"]["savedThemes"])
         self.assertEqual(mobile, state["layout"][0]["mobile"])
         self.assertNotIn("mobileJson", state["layout"][0])
-        imported, conflict = db.import_state(state, expected_rev=0)
+
+        root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+        source = os.path.join(self.temp.name, "theme-workshop.yaml")
+        database = os.path.join(self.temp.name, "theme-workshop.db")
+        with open(source, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + "\n")
+        imported = subprocess.run([
+            sys.executable, os.path.join(root, "server", "rexhub.py"), "--data", database,
+            "--import-yaml", source,
+        ], cwd=root, capture_output=True, text=True, timeout=15)
+        self.assertEqual(0, imported.returncode, imported.stderr)
+        db.configure(database)
+        self.assertEqual(state, db.get_state()["state"])
+        db.put_state(empty_state(), 1)
+        restored, conflict = db.restore_state(1, expected_rev=2)
         self.assertIsNone(conflict)
-        db.put_state(empty_state(), imported["rev"])
-        restored, conflict = db.restore_state(imported["rev"], expected_rev=imported["rev"] + 1)
-        self.assertIsNone(conflict)
-        self.assertEqual(state, restored and db.get_state()["state"])
+        self.assertEqual(3, restored["rev"])
+        self.assertEqual(state, db.get_state()["state"])
         native = yaml_import.parse(json.dumps(state, ensure_ascii=False))
         self.assertEqual(state, native)
 
@@ -131,6 +152,21 @@ class DatabaseTests(unittest.TestCase):
                 with self.assertRaises(yaml_import.ImportError) as caught:
                     yaml_import.parse(layout + f"    mobileJson: {value}\napps: []\n")
                 self.assertIn("mobileJson", str(caught.exception))
+                self.assertIn(message, str(caught.exception))
+        for value, message in (('"{broken"', "损坏"), ('"[]"', "必须是对象或 null")):
+            with self.subTest(themeWallpaperJson=value):
+                with self.assertRaises(yaml_import.ImportError) as caught:
+                    yaml_import.parse(f"profile:\n  themeWallpaperJson: {value}\nlayout: []\napps: []\n")
+                self.assertIn("themeWallpaperJson", str(caught.exception))
+                self.assertIn(message, str(caught.exception))
+        null_wallpaper = yaml_import.parse('profile:\n  themeWallpaperJson: "null"\nlayout: []\napps: []\n')
+        self.assertIsNone(null_wallpaper["profile"]["themeWallpaper"])
+        for value, message in (('"{broken"', "损坏"), ('"{}"', "必须是主题对象数组"),
+                               ('"[null]"', "必须是主题对象数组")):
+            with self.subTest(savedThemesJson=value):
+                with self.assertRaises(yaml_import.ImportError) as caught:
+                    yaml_import.parse(f"layout: []\napps: []\nsavedThemesJson: {value}\n")
+                self.assertIn("savedThemesJson", str(caught.exception))
                 self.assertIn(message, str(caught.exception))
 
     def test_force_import_and_restore_are_idempotent_and_restore_clicks(self):

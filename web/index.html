@@ -202,6 +202,19 @@
           </section>
 
           <section data-settings-panel="appearance-custom" hidden>
+            <section class="saved-theme-panel" aria-labelledby="savedThemeTitle">
+              <div class="saved-theme-heading">
+                <div>
+                  <h4 id="savedThemeTitle">我的主题</h4>
+                  <p>保存当前 token、来源和壁纸，之后可应用或继续修改。</p>
+                </div>
+              </div>
+              <div class="saved-theme-create">
+                <input type="text" id="savedThemeName" maxlength="80" aria-label="我的主题名称" placeholder="主题名称" />
+                <button type="button" class="glass-btn" id="saveCurrentThemeBtn">保存当前</button>
+              </div>
+              <div id="savedThemesList" class="saved-themes-list" aria-live="polite"></div>
+            </section>
             <div id="themeTokenGroups" class="theme-token-groups"></div>
           </section>
 

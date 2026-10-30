@@ -103,6 +103,7 @@
       element.tabIndex = -1;
       element.disabled = option.disabled;
       var label = document.createElement("span");
+      label.className = "st-select-option-label";
       label.textContent = option.text;
       var check = document.createElement("span");
       check.className = "st-select-check";

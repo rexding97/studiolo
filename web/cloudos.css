@@ -2281,3 +2281,264 @@ select.st-select-native {
   .st-select-workspace .st-select-trigger,
   .st-select-option { font-size: 16px; }
 }
+
+/* 移动端最终覆盖：集中维护，桌面样式不受后续新增规则影响。 */
+@media (max-width: 720px) {
+  html, body { max-width: 100%; overflow-x: hidden; }
+  .desktop-shell {
+    min-height: 100dvh;
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
+  }
+  .topbar {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding: max(10px, env(safe-area-inset-top)) 0 6px;
+  }
+  .glass-pill {
+    width: auto;
+    max-width: 100%;
+    flex: 0 0 auto;
+    padding: 7px 12px;
+    white-space: nowrap;
+  }
+  .top-actions {
+    flex: 1 1 100%;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: nowrap;
+  }
+  .sync-indicator { min-width: 24px; padding: 6px 8px; }
+  .sync-tip { display: none; }
+  #toggleEditModeBtn,
+  #openSettingsBtn {
+    min-height: 44px;
+    padding: 8px 10px;
+    white-space: nowrap;
+  }
+  .hero-area { margin: 2px auto 12px; padding: 0 4px; }
+  .hero-clock { font-size: 40px; }
+  .hero-sub { margin-top: 3px; font-size: 11px; }
+  .omni-container { margin-top: 10px; }
+  .omni-bar { gap: 6px; padding: 7px 9px; border-radius: 18px; }
+  .engine-chip {
+    flex: 0 0 auto;
+    max-width: 86px;
+    padding: 5px 7px;
+    overflow: hidden;
+    font-size: 11px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .omni-input { min-width: 0; font-size: 16px; }
+  .omni-dropdown { max-height: 45dvh; }
+
+  .workspace { padding: 4px 0 calc(132px + env(safe-area-inset-bottom)); }
+  body.dock-on .desktop-shell { padding-bottom: calc(104px + env(safe-area-inset-bottom)); }
+  .atomic-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    grid-auto-rows: 88px !important;
+    gap: 10px !important;
+    min-height: calc(88px * 4 + 10px * 3) !important;
+  }
+  .widget-shell {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    padding: 10px 9px;
+  }
+  .widget-topbar { min-width: 0; min-height: 26px; gap: 4px; }
+  .widget-title-area { min-width: 0; gap: 4px; }
+  .widget-title { font-size: 11px; }
+  .widget-tag { padding: 1px 5px; font-size: 9px; }
+  .widget-actions { flex-shrink: 0; gap: 2px; }
+  .widget-actions .tiny-btn,
+  .widget-edit-toolbar .tiny-btn {
+    min-width: 28px;
+    min-height: 28px;
+    padding: 3px 5px;
+    font-size: 9px;
+  }
+  .widget-foot-metrics {
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 4px;
+    font-size: 9px;
+    white-space: normal;
+  }
+  .host-metrics { flex-wrap: wrap; white-space: normal; }
+  .widget-shell.w-2 .host-metrics,
+  .widget-shell.w-3 .host-metrics { display: none; }
+  .widget-edit-toolbar {
+    top: -10px;
+    max-width: calc(100vw - 32px);
+    gap: 2px;
+    overflow-x: auto;
+    z-index: 40;
+  }
+  .host-trend-popover {
+    width: 240px;
+    max-width: calc(100vw - 24px);
+    overflow-wrap: anywhere;
+  }
+  .calendar-events,
+  .calendar-event,
+  .calendar-event time,
+  .calendar-sync-status { min-width: 0; overflow-wrap: anywhere; }
+  .calendar-event time { white-space: normal; }
+
+  .st-select-workspace { width: 100%; max-width: none; min-width: 0; }
+  .st-select-trigger {
+    min-height: 44px;
+    font-size: 14px;
+  }
+  .st-select-workspace .st-select-trigger {
+    min-height: 44px;
+    font-size: 13px;
+  }
+  .st-select-menu {
+    width: max-content;
+    min-width: 100%;
+    max-width: calc(100vw - 24px);
+    max-height: min(320px, 50dvh);
+  }
+  .st-select-workspace .st-select-menu { left: auto; right: 0; }
+  .st-select-option { min-height: 44px; font-size: 14px; }
+  .st-select-workspace .st-select-option { font-size: 13px; }
+  .st-select.drop-up .st-select-menu { top: auto; bottom: calc(100% + 8px); }
+
+  .stage-dock {
+    bottom: calc(10px + env(safe-area-inset-bottom));
+    max-width: calc(100vw - 20px - env(safe-area-inset-left) - env(safe-area-inset-right));
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 22px;
+  }
+  .stage-dock .app-unit { flex: 0 0 54px; min-height: 64px; }
+  .stage-dock .app-squircle { width: 46px; height: 46px; }
+  .stage-dock .app-label { max-width: 54px; font-size: 10px; }
+
+  #settingsBackdrop { padding: 0; max-height: 100dvh; }
+  #settingsBackdrop .settings-panel {
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: 100dvh !important;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 0;
+    border-radius: 0;
+  }
+  .settings-sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    width: 100%;
+    flex: 0 0 auto;
+    flex-direction: row;
+    gap: 4px;
+    padding: calc(8px + env(safe-area-inset-top)) 10px 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-right: 0;
+  }
+  .settings-nav,
+  .settings-nav-group,
+  .settings-nav-children { flex: 0 0 auto; flex-direction: row; }
+  .settings-nav button { min-height: 40px; white-space: nowrap; }
+  .settings-main { flex: 1 1 auto; min-height: 0; padding: 12px; overflow: hidden; }
+  .settings-head {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    padding: 4px 0 8px;
+    background: rgba(15, 23, 42, 0.96);
+  }
+  #closeSettingsBtn { min-width: 44px; min-height: 44px; }
+  .settings-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: 0 0 calc(20px + env(safe-area-inset-bottom));
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .form-grid { grid-template-columns: minmax(0, 1fr); }
+  .form-full { grid-column: 1; }
+  .form-field input[type="text"],
+  .form-field textarea,
+  .saved-theme-create input { font-size: 16px; }
+  .theme-store-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .version-layout { grid-template-columns: minmax(0, 1fr); }
+  .version-detail,
+  .version-preview { min-width: 0; max-width: 100%; }
+  .saved-theme-row { align-items: flex-start; flex-wrap: wrap; }
+  .saved-theme-actions { justify-content: flex-start; flex-wrap: wrap; }
+  .saved-theme-create { flex-wrap: wrap; }
+
+  .modal-backdrop:not(#settingsBackdrop) { padding: 12px; }
+  .modal-panel:not(.settings-panel) {
+    max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    padding: 18px;
+    overflow-y: auto;
+    border-radius: 22px;
+  }
+  .modal-panel .glass-btn { min-height: 44px; }
+  .folder-backdrop { padding: 12px; }
+  .folder-expanded-card {
+    width: 100%;
+    max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+    padding: 18px;
+    overflow-y: auto;
+    border-radius: 24px;
+  }
+  .folder-expanded-card > div:first-child {
+    position: sticky;
+    top: -18px;
+    z-index: 3;
+    padding-bottom: 8px;
+    background: rgba(15, 23, 42, 0.96);
+  }
+  .folder-expanded-grid { grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 14px 8px; }
+}
+
+@media (max-width: 420px) {
+  .top-actions { gap: 4px; }
+  #toggleEditModeBtn,
+  #openSettingsBtn {
+    min-width: 50px;
+    justify-content: center;
+    padding: 8px;
+    font-size: 0;
+  }
+  #toggleEditModeBtn::after { content: "编辑"; font-size: 11px; }
+  #openSettingsBtn::after { content: "设置"; font-size: 11px; }
+  .hero-clock { font-size: 34px; }
+  .hero-sub { font-size: 10.5px; }
+  .omni-bar { gap: 5px; padding: 6px 8px; }
+  .engine-chip { max-width: 72px; }
+  .atomic-grid {
+    grid-auto-rows: 80px !important;
+    gap: 8px !important;
+    min-height: calc(80px * 4 + 8px * 3) !important;
+  }
+  .widget-shell { padding: 9px 8px; }
+  .widget-title { font-size: 10.5px; }
+  .theme-store-grid { grid-template-columns: minmax(0, 1fr); }
+  .settings-main { padding: 10px; }
+  .modal-panel:not(.settings-panel),
+  .folder-expanded-card { padding: 15px; }
+  .folder-expanded-card > div:first-child { top: -15px; }
+}
+
+@media (hover: none) {
+  .app-unit:hover,
+  .glass-btn:hover,
+  .theme-store-card:hover,
+  .omni-bar:focus-within { transform: none; }
+  button:not(.tiny-btn):not(.st-select-option),
+  [role="button"],
+  summary { min-height: 44px; }
+}

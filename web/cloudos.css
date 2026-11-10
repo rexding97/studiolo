@@ -2340,9 +2340,9 @@ select.st-select-native {
   body.dock-on .desktop-shell { padding-bottom: calc(104px + env(safe-area-inset-bottom)); }
   .atomic-grid {
     grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-    grid-auto-rows: 88px !important;
+    grid-auto-rows: 120px !important;
     gap: 10px !important;
-    min-height: calc(88px * 4 + 10px * 3) !important;
+    min-height: calc(120px * 4 + 10px * 3) !important;
   }
   .widget-shell {
     width: 100%;
@@ -2520,9 +2520,9 @@ select.st-select-native {
   .omni-bar { gap: 5px; padding: 6px 8px; }
   .engine-chip { max-width: 72px; }
   .atomic-grid {
-    grid-auto-rows: 80px !important;
+    grid-auto-rows: 116px !important;
     gap: 8px !important;
-    min-height: calc(80px * 4 + 8px * 3) !important;
+    min-height: calc(116px * 4 + 8px * 3) !important;
   }
   .widget-shell { padding: 9px 8px; }
   .widget-title { font-size: 10.5px; }

@@ -2542,3 +2542,20 @@ select.st-select-native {
   [role="button"],
   summary { min-height: 44px; }
 }
+
+html,
+body {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+html::-webkit-scrollbar,
+body::-webkit-scrollbar { display: none; }
+.atomic-grid { min-height: 0 !important; }
+.workspace { padding-bottom: 32px; }
+body.dock-on .desktop-shell { padding-bottom: 0; }
+body.dock-on .workspace { padding-bottom: 112px; }
+
+@media (max-width: 720px) {
+  .workspace { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+  body.dock-on .workspace { padding-bottom: calc(108px + env(safe-area-inset-bottom)); }
+}

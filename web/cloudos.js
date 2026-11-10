@@ -887,19 +887,93 @@
     }
   }
 
-  function normalizeMobileLayout(layoutList) {
-    const placed = [];
-    for (const item of layoutList) {
-      const rect = getLayoutRect(item, true);
-      if (isAreaFree(placed, rect.x, rect.y, rect.w, rect.h, item.id, true)) {
-        setLayoutRect(item, rect, true);
-      } else {
-        const spot = findFirstFreeSpot(placed, rect.w, rect.h, item.id, 1, true);
-        if (spot) setLayoutRect(item, Object.assign({}, rect, spot), true);
+  function reflowMobileLayout(layoutList, options = {}) {
+    const preserveExplicit = options.preserveExplicit === true;
+    const occupied = new Set();
+    let maxY = 1;
+    let maxRows = Math.max(8, layoutList.length * 4 + 4);
+    const key = (x, y) => `${x},${y}`;
+    const desktopOrder = layoutList.map((item, index) => ({ item, index })).sort((a, b) => {
+      const ar = getLayoutRect(a.item, false);
+      const br = getLayoutRect(b.item, false);
+      return ar.y - br.y || ar.x - br.x || String(a.item.id).localeCompare(String(b.item.id)) || a.index - b.index;
+    }).map((entry) => entry.item);
+
+    function isFree(rect) {
+      if (rect.x < 1 || rect.y < 1 || rect.x + rect.w > MOBILE_GRID_COLS + 1) return false;
+      for (let y = rect.y; y < rect.y + rect.h; y += 1) {
+        for (let x = rect.x; x < rect.x + rect.w; x += 1) {
+          if (occupied.has(key(x, y))) return false;
+        }
       }
-      placed.push(item);
+      return true;
     }
+    function occupy(rect) {
+      for (let y = rect.y; y < rect.y + rect.h; y += 1) {
+        for (let x = rect.x; x < rect.x + rect.w; x += 1) occupied.add(key(x, y));
+      }
+      maxY = Math.max(maxY, rect.y + rect.h);
+    }
+    function findSpot(rect, startX, startY) {
+      for (let y = Math.max(1, startY); y <= maxRows; y += 1) {
+        for (let x = y === startY ? Math.max(1, startX) : 1; x <= MOBILE_GRID_COLS - rect.w + 1; x += 1) {
+          const candidate = { x, y, w: rect.w, h: rect.h };
+          if (isFree(candidate)) return candidate;
+        }
+      }
+      return null;
+    }
+    function place(rect, startX, startY) {
+      const spot = findSpot(rect, startX, startY) || findSpot(rect, 1, maxY) || { x: 1, y: maxY, w: rect.w, h: rect.h };
+      occupy(spot);
+      return spot;
+    }
+
+    if (preserveExplicit) {
+      const explicit = layoutList.filter((item) => item.mobile && typeof item.mobile === "object").sort((a, b) => {
+        const ar = getLayoutRect(a, true);
+        const br = getLayoutRect(b, true);
+        return ar.y - br.y || ar.x - br.x || String(a.id).localeCompare(String(b.id));
+      });
+      explicit.forEach((item) => {
+        const rect = getLayoutRect(item, true);
+        maxRows = Math.max(maxRows, rect.y + rect.h + 4);
+        const spot = isFree(rect) ? rect : place(rect, 1, rect.y);
+        occupy(spot);
+        setLayoutRect(item, spot, true);
+      });
+    }
+
+    let cursor = { x: 1, y: 1 };
+    desktopOrder.forEach((item) => {
+      if (preserveExplicit && item.mobile && typeof item.mobile === "object") return;
+      const isApp = item.kind === "app";
+      const rect = isApp
+        ? { w: 1, h: 1 }
+        : { w: MOBILE_GRID_COLS, h: Math.max(1, Math.min(4, Math.round(Number(item.h) || 2))) };
+      if (!isApp && cursor.x !== 1) {
+        cursor.x = 1;
+        cursor.y += 1;
+      }
+      const spot = place(rect, isApp ? cursor.x : 1, cursor.y);
+      setLayoutRect(item, spot, true);
+      if (isApp) {
+        cursor = spot.x < MOBILE_GRID_COLS ? { x: spot.x + 1, y: spot.y } : { x: 1, y: spot.y + 1 };
+      } else {
+        cursor = { x: 1, y: spot.y + spot.h };
+      }
+    });
+    return layoutList;
   }
+
+  function normalizeMobileLayout(layoutList) {
+    return reflowMobileLayout(layoutList, { preserveExplicit: true });
+  }
+
+  window.StudioloMobileLayout = Object.freeze({
+    reflow: reflowMobileLayout,
+    normalize: normalizeMobileLayout
+  });
 
   function captureLayoutSnapshot() {
     const snap = new Map();
@@ -4523,6 +4597,13 @@
   }
 
   function initWorkspaceControls() {
+    document.getElementById("reflowMobileLayoutBtn").addEventListener("click", () => {
+      if (!window.confirm("按当前桌面视觉顺序重新整理手机布局？只会修改手机坐标，桌面位置不变，可撤销。")) return;
+      commitState((draft) => {
+        reflowMobileLayout(draft.layout);
+      });
+      showToast("手机布局已按桌面顺序整理，桌面位置未改变", true);
+    });
     document.getElementById("workspaceSelect").addEventListener("change", (event) => switchWorkspace(event.target.value));
     document.getElementById("newWorkspaceBtn").addEventListener("click", () => {
       const name = window.prompt("新工作区名称", `工作区 ${state.workspaces.length + 1}`);
